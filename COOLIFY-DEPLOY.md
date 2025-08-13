@@ -20,6 +20,13 @@ OPENAI_API_KEY=sk-your-openai-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
+# Redis Cloud (External)
+REDIS_HOST=fo8400okko0gckwcw8gksscc
+REDIS_PORT=6379
+REDIS_USERNAME=default
+REDIS_PASSWORD=4sBBfBGYfo26H9PYa65sFVBxxK848fPEdgUgGVMp5BcurxpSUKJuz23jTHIkdilD
+REDIS_DB=0
+
 # Evolution API
 EVOLUTION_API_BASE_URL=https://your-evolution-api.com
 EVOLUTION_API_KEY=your-api-key
@@ -32,18 +39,19 @@ ENVIRONMENT=production
 
 ### 3. Redis Configuration
 
-O Redis está incluído no docker-compose.yml. Para Coolify:
-- **Serviço**: Redis será criado automaticamente
-- **URL**: `redis://redis:6380` (interno do container)
-- **Porta Externa**: 6380 (para evitar conflitos)
-- **Persistent Volume**: Configurado para `/data`
-- **Health Check**: Configurado para aguardar Redis estar pronto
-- **Wait Script**: Script `wait-for-redis.sh` garante que aplicação aguarde Redis
+O projeto usa **Redis Cloud externo** (mesmo do projeto Node):
+- **Host**: fo8400okko0gckwcw8gksscc
+- **Port**: 6379  
+- **Username**: default
+- **Password**: [configurado via variáveis]
+- **Database**: 0
+- **Network**: coolify (externa)
 
 **Importante para Coolify**: 
-- A aplicação aguarda automaticamente o Redis estar pronto
-- Configurada para 10 tentativas de conexão com 3s de delay
-- Fallback para modo mock se Redis não estiver disponível
+- Usa Redis Cloud compartilhado entre projetos Node e Python
+- Configurado via variáveis REDIS_HOST, REDIS_PORT, REDIS_USERNAME, REDIS_PASSWORD
+- Fallback automático para Redis local em desenvolvimento
+- Network externa "coolify" para comunicação entre serviços
 
 ### 4. Health Check
 

@@ -3,7 +3,7 @@ version: '3.8'
 services:
   aleen-ai:
     build: .
-    container_name: aleen-ai
+    container_name: aleen-ai-python
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -15,8 +15,19 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       
-      # Redis Configuration
-      - REDIS_URL=redis://redis:6379
+      # Redis Configuration (External Redis Cloud)
+            # Redis configuration - prioridade para variáveis individuais (Redis Cloud)
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_USERNAME=${REDIS_USERNAME:-default}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB:-0}
+      # Fallback para URL-based
+      - REDIS_URL=${REDIS_URL}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_USERNAME=${REDIS_USERNAME}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_DB=${REDIS_DB}
       
       # Evolution API Configuration
       - EVOLUTION_API_BASE_URL=${EVOLUTION_API_BASE_URL}
@@ -26,12 +37,8 @@ services:
       # Application Configuration
       - PORT=${PORT:-9000}
       - ENVIRONMENT=${ENVIRONMENT:-production}
-    command: ["./wait-for-redis.sh", "redis", "6379", "python", "main.py"]
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
-      - aleen-network-ai
+      - coolify
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
@@ -39,27 +46,7 @@ services:
       retries: 5
       start_period: 60s
 
-  redis:
-    image: redis:7-alpine
-    container_name: aleen-redis
-    restart: unless-stopped
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    networks:
-      - aleen-network-ai
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
 networks:
-  aleen-network-ai:
-    driver: bridge
-
-volumes:
-  redis_data:
-    driver: local
+  coolify:
+    name: coolify
+    external: true

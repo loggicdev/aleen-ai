@@ -28,18 +28,62 @@ app = FastAPI(title="Aleen AI Agents", version="1.0.0")
 def connect_redis_with_retry(max_retries=10, delay=3):
     for attempt in range(max_retries):
         try:
-            # Detecta se está rodando em Docker/Coolify ou local
-            if os.getenv("ENVIRONMENT") == "production" or os.path.exists("/.dockerenv"):
-                redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
-            else:
-                redis_url = os.getenv("REDIS_URL", "redis://localhost:6380")
-            print(f"🔍 Tentativa {attempt + 1}/{max_retries} - Conectando Redis: {redis_url}")
+            # Priorizar variáveis de ambiente individuais (mesmo padrão do Node.js)
+            redis_host = os.getenv("REDIS_HOST")
+            redis_port = os.getenv("REDIS_PORT")
+            redis_username = os.getenv("REDIS_USERNAME", "default")
+            redis_password = os.getenv("REDIS_PASSWORD")
+            redis_db = int(os.getenv("REDIS_DB", "0"))
             
-            redis_client = redis.from_url(redis_url, decode_responses=True, socket_timeout=10, socket_connect_timeout=10)
+            if redis_host and redis_password:
+                # Configuração individual (preferida) - Redis Cloud
+                print(f"🔍 Tentativa {attempt + 1}/{max_retries} - Redis individual config:")
+                print(f"   Host: {redis_host}")
+                print(f"   Port: {redis_port}")
+                print(f"   Username: {redis_username}")
+                print(f"   Password length: {len(redis_password) if redis_password else 0}")
+                print(f"   DB: {redis_db}")
+                
+                redis_client = redis.Redis(
+                    host=redis_host,
+                    port=int(redis_port) if redis_port else 6379,
+                    username=redis_username,
+                    password=redis_password,
+                    db=redis_db,
+                    decode_responses=True,
+                    socket_timeout=10,
+                    socket_connect_timeout=10,
+                    socket_keepalive=True,
+                    socket_keepalive_options={},
+                    retry_on_timeout=True,
+                    health_check_interval=30
+                )
+            else:
+                # Fallback para URL-based configuration
+                redis_url = os.getenv("REDIS_URL")
+                if not redis_url:
+                    # Auto-detecta ambiente
+                    if os.getenv("ENVIRONMENT") == "production" or os.path.exists("/.dockerenv"):
+                        redis_url = "redis://redis:6379"
+                    else:
+                        redis_url = "redis://localhost:6380"
+                
+                print(f"🔍 Tentativa {attempt + 1}/{max_retries} - Redis URL config: {redis_url}")
+                
+                redis_client = redis.from_url(
+                    redis_url, 
+                    decode_responses=True, 
+                    socket_timeout=10, 
+                    socket_connect_timeout=10,
+                    retry_on_timeout=True,
+                    health_check_interval=30
+                )
+            
             # Test connection
             redis_client.ping()
             print("✅ Redis conectado com sucesso")
             return redis_client
+            
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"⚠️ Tentativa {attempt + 1}/{max_retries} - Erro ao conectar Redis: {e}")
