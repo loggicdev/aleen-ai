@@ -29,7 +29,7 @@ services:
     depends_on:
       - redis
     networks:
-      - aleen-network
+      - aleen-network-ai
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
@@ -47,7 +47,7 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     networks:
-      - aleen-network
+      - aleen-network-ai
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -55,7 +55,7 @@ services:
       retries: 3
 
 networks:
-  aleen-network:
+  aleen-network-ai:
     driver: bridge
 
 volumes:
