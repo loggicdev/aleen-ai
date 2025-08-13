@@ -36,6 +36,13 @@ O Redis está incluído no docker-compose.yml. Para Coolify:
 - **Serviço**: Redis será criado automaticamente
 - **URL**: `redis://redis:6379` (interno do container)
 - **Persistent Volume**: Configurado para `/data`
+- **Health Check**: Configurado para aguardar Redis estar pronto
+- **Wait Script**: Script `wait-for-redis.sh` garante que aplicação aguarde Redis
+
+**Importante para Coolify**: 
+- A aplicação aguarda automaticamente o Redis estar pronto
+- Configurada para 10 tentativas de conexão com 3s de delay
+- Fallback para modo mock se Redis não estiver disponível
 
 ### 4. Health Check
 

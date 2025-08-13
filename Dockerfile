@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -19,6 +20,9 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy application code
 COPY . .
+
+# Make wait script executable
+RUN chmod +x wait-for-redis.sh
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
