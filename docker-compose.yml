@@ -6,7 +6,7 @@ services:
     container_name: aleen-ai
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "9000:9000"
     environment:
       # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -24,14 +24,14 @@ services:
       - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE}
       
       # Application Configuration
-      - PORT=${PORT:-8000}
+      - PORT=${PORT:-9000}
       - ENVIRONMENT=${ENVIRONMENT:-production}
     depends_on:
       - redis
     networks:
       - aleen-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
