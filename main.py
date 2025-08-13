@@ -118,9 +118,9 @@ def get_user_memory(phone_number: str) -> List[str]:
         
         memory_data = redis_client.get(memory_key)
         if memory_data:
-            # Decodifica e converte de volta para lista
+            # Como decode_responses=True, memory_data já é uma string
             import json
-            return json.loads(memory_data.decode('utf-8'))
+            return json.loads(memory_data)
         return []
     except Exception as e:
         print(f"⚠️ Erro ao recuperar memória do usuário {phone_number}: {e}")
