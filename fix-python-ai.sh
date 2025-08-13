@@ -32,7 +32,7 @@ check_health() {
 # Função para testar conectividade
 test_connectivity() {
     echo "🌐 Testando conectividade..."
-    if docker exec aleen-ia curl -s --max-time 3 http://python-ai:8000/health > /dev/null 2>&1; then
+    if docker exec aleen-ia curl -s --max-time 3 http://python-ai:9000/health > /dev/null 2>&1; then
         echo "✅ Conectividade OK: aleen-ia -> python-ai"
         return 0
     else

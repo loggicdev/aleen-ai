@@ -1,4 +1,4 @@
-# 🚨 Troubleshooting: Erro "getaddrinfo ENOTFOUND python-ai" na VPS
+# 🚨 Troubleshooting: Erro "getaddridocker exec aleen-ai curl http://python-ai:9000/watch -n 30 'docker exec aleen-ai curl -s http://python-ai:9000/health'ealthfo ENOTFOUND python-ai" na VPS
 
 ## Problema
 O serviço TypeScript na VPS não consegue conectar com o serviço Python AI, resultando no erro:
@@ -39,7 +39,7 @@ docker exec aleen-ia curl http://python-ai:8000/health
 
 #### Testar conectividade externa:
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:9000/health
 ```
 
 ### 4. 🏗️ Rebuild Completo (se necessário)

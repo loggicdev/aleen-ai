@@ -46,7 +46,7 @@ PORT=3000
 REDIS_URL=redis://redis:6380
 
 # Python AI Service
-PYTHON_AI_BASE_URL=http://python-ai:8000
+PYTHON_AI_BASE_URL=http://python-ai:9000
 
 # Evolution API
 EVOLUTION_API_BASE_URL=https://evo-iafit.live.claudy.host

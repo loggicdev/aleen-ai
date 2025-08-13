@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🔄 Reiniciando Serviço Python AI na VPS"
+echo "🔄 Reinicdocker exec aleen-ai curl -s --max-time 5 http://python-ai:9000/health && echo "✅ Serviço funcionando!" || echo "❌ Serviço ainda com problemas"ando Serviço Python AI na VPS"
 echo "======================================"
 echo
 

@@ -31,18 +31,18 @@ echo
 echo "🌐 Testando conectividade interna Docker:"
 echo "  Teste 1: aleen-ia -> python-ai"
 docker exec aleen-ia ping -c 2 python-ai 2>/dev/null || echo "❌ Ping falhou"
-echo "  Teste 2: aleen-ia -> python-ai:8000/health"
-docker exec aleen-ia curl -s --max-time 5 http://python-ai:8000/health || echo "❌ Conexão HTTP falhou"
+echo "  Teste 2: aleen-ia -> python-ai:9000/health"
+docker exec aleen-ia curl -s --max-time 5 http://python-ai:9000/health || echo "❌ Conexão HTTP falhou"
 echo
 
-# Verifica se a porta 8000 está aberta no container
-echo "🔍 Verificando processo na porta 8000 do python-ai:"
-docker exec python-ai netstat -tulpn | grep :8000 2>/dev/null || echo "❌ Porta 8000 não está sendo escutada"
+# Verifica se a porta 9000 está aberta no container
+echo "🔍 Verificando processo na porta 9000 do python-ai:"
+docker exec python-ai netstat -tulpn | grep :9000 2>/dev/null || echo "❌ Porta 9000 não está sendo escutada"
 echo
 
 # Testa endpoint direto na porta exposta
 echo "🌐 Testando endpoint direto na porta exposta:"
-curl -s --max-time 5 http://localhost:8000/health || echo "❌ Endpoint externo não acessível"
+curl -s --max-time 5 http://localhost:9000/health || echo "❌ Endpoint externo não acessível"
 echo
 
 # Verifica variáveis de ambiente
@@ -69,7 +69,7 @@ echo "   docker-compose down"
 echo "   docker-compose up -d"
 echo
 echo "3. 🏥 Se o container está unhealthy:"
-echo "   docker exec python-ai curl http://localhost:8000/health"
+echo "   docker exec python-ai curl http://localhost:9000/health"
 echo "   docker exec python-ai ps aux"
 echo
 echo "4. 🔄 Rebuild completo se necessário:"
