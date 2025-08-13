@@ -64,7 +64,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Redis
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://localhost:6380
 
 # Evolution API
 EVOLUTION_API_BASE_URL=https://your-evolution-api.com

@@ -28,7 +28,7 @@ app = FastAPI(title="Aleen AI Agents", version="1.0.0")
 def connect_redis_with_retry(max_retries=10, delay=3):
     for attempt in range(max_retries):
         try:
-            redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+            redis_url = os.getenv("REDIS_URL", "redis://localhost:6380")
             print(f"🔍 Tentativa {attempt + 1}/{max_retries} - Conectando Redis: {redis_url}")
             
             redis_client = redis.from_url(redis_url, decode_responses=True, socket_timeout=10, socket_connect_timeout=10)

@@ -16,7 +16,7 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       
       # Redis Configuration
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6380}
       
       # Evolution API Configuration
       - EVOLUTION_API_BASE_URL=${EVOLUTION_API_BASE_URL}
@@ -26,7 +26,7 @@ services:
       # Application Configuration
       - PORT=${PORT:-9000}
       - ENVIRONMENT=${ENVIRONMENT:-production}
-    command: ["./wait-for-redis.sh", "redis", "6379", "python", "main.py"]
+    command: ["./wait-for-redis.sh", "redis", "6380", "python", "main.py"]
     depends_on:
       redis:
         condition: service_healthy
@@ -44,7 +44,7 @@ services:
     container_name: aleen-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
