@@ -1,0 +1,10 @@
+openai
+openai-agents
+fastapi
+uvicorn
+pydantic
+python-dotenv
+redis
+supabase
+requests
+eval_type_backport
