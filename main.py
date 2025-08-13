@@ -1413,13 +1413,18 @@ async def clear_user_memory_endpoint(phone_number: str):
 
 if __name__ == "__main__":
     import uvicorn
+    import os
+    
+    # Porta configurável via variável de ambiente
+    port = int(os.getenv("PORT", 9000))
+    
     print("🚀 Iniciando Aleen AI Python Service...")
-    print(f"🌐 Servidor rodando em: http://0.0.0.0:8000")
-    print(f"📋 Health check: http://0.0.0.0:8000/health")
+    print(f"🌐 Servidor rodando em: http://0.0.0.0:{port}")
+    print(f"📋 Health check: http://0.0.0.0:{port}/health")
     uvicorn.run(
         app, 
         host="0.0.0.0", 
-        port=8000,
+        port=port,
         log_level="info",
         access_log=True
     )

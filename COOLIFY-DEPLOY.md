@@ -6,7 +6,7 @@
 - **Repository**: https://github.com/loggicdev/aleen-ai.git
 - **Branch**: main
 - **Build Pack**: Docker
-- **Port**: 8000
+- **Port**: 9000
 
 ### 2. Variáveis de Ambiente Obrigatórias
 
@@ -26,7 +26,7 @@ EVOLUTION_API_KEY=your-api-key
 EVOLUTION_INSTANCE=your-instance-name
 
 # Application (opcional)
-PORT=8000
+PORT=9000
 ENVIRONMENT=production
 ```
 
@@ -79,7 +79,7 @@ Se houver problemas:
 
 1. **Verificar logs**: `docker-compose logs aleen-ai`
 2. **Verificar Redis**: `docker-compose logs redis`
-3. **Testar health**: `curl http://localhost:8000/health`
+3. **Testar health**: `curl http://localhost:9000/health`
 4. **Restart**: `docker-compose restart aleen-ai`
 
 ### 9. Recursos Recomendados

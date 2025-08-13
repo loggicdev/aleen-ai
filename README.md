@@ -148,7 +148,7 @@ Cria usuário completo com autenticação
 ### Docker
 ```bash
 docker build -t aleen-ai .
-docker run -p 8000:8000 --env-file .env aleen-ai
+docker run -p 9000:9000 --env-file .env aleen-ai
 ```
 
 ### Scripts Disponíveis
