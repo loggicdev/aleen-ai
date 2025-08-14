@@ -767,7 +767,7 @@ INSTRUÇÃO CRÍTICA DE IDIOMA:
             agents_cache[agent_type] = Agent(
                 name=f"{agent_data.get('name', 'Aleen')} - {agent_type.title()}",
                 instructions=final_prompt,
-                model="gpt-4"
+                model="gpt-5-mini"
             )
         
         # Se não encontrou agente de sales, cria um baseado no padrão (não deveria acontecer mais)
@@ -805,7 +805,7 @@ Ask about:
             agents_cache['sales'] = Agent(
                 name="Aleen Sales Agent",
                 instructions=agents_config['sales']['prompt'],
-                model="gpt-4"
+                model="gpt-5-mini"
             )
         
         print(f"Carregados {len(agents_cache)} agentes do Supabase:")
@@ -927,7 +927,7 @@ Politely redirect users back to fitness and nutrition topics where you can help 
         agents_cache[agent_type] = Agent(
             name=config['name'],
             instructions=config['prompt'],
-            model="gpt-4"
+            model="gpt-5-mini"
         )
 
 # Carrega agentes na inicialização
@@ -1130,7 +1130,7 @@ async def chat(request: ChatRequest):
             
             # Chama OpenAI diretamente
             response = openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-5-mini",
                 messages=messages,
                 max_tokens=1000,
                 temperature=0.7
@@ -1174,7 +1174,7 @@ async def chat(request: ChatRequest):
                 ]
                 
                 fallback_response = openai_client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-5-mini",
                     messages=simple_messages,
                     max_tokens=200,
                     temperature=0.5
@@ -1204,7 +1204,7 @@ async def chat(request: ChatRequest):
             ]
             
             error_response = openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-5-mini",
                 messages=error_messages,
                 max_tokens=100,
                 temperature=0.3
@@ -1291,7 +1291,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         try:
             # Primeira chamada com tools disponíveis
             response = openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-5-mini",
                 messages=messages,
                 max_tokens=1000,
                 temperature=0.7,
@@ -1334,7 +1334,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 
                 # Segunda chamada para gerar resposta final com os resultados das tools
                 final_response = openai_client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-5-mini",
                     messages=messages,
                     max_tokens=1000,
                     temperature=0.7
@@ -1372,7 +1372,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 ]
                 
                 fallback_response = openai_client.chat.completions.create(
-                    model="gpt-4",
+                    model="gpt-5-mini",
                     messages=fallback_messages,
                     max_tokens=200,
                     temperature=0.5
