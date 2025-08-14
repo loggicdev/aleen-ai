@@ -1286,13 +1286,49 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         
         if request.send_to_whatsapp:
             try:
+                # Quebra a mensagem apenas uma vez
                 messages = evolution_service.split_message(ai_response)
                 messages_sent = len(messages)
-                whatsapp_sent = evolution_service.send_text_message(
-                    phone_number=request.phone_number,
-                    text=ai_response,
-                    delay=3500  # 3.5s delay entre mensagens
-                )
+                
+                # Envia as mensagens já quebradas
+                whatsapp_sent = True
+                clean_number = evolution_service.clean_phone_number(request.phone_number)
+                
+                print(f"📱 Enviando {len(messages)} mensagem(s) para {clean_number}")
+                print(f"🔍 Mensagens quebradas:")
+                for i, msg in enumerate(messages):
+                    print(f"   {i+1}. ({len(msg)} chars): {msg[:50]}...")
+                
+                # Envia cada mensagem individualmente
+                for i, message in enumerate(messages):
+                    payload = {
+                        "number": clean_number,
+                        "text": message,
+                        "options": {
+                            "delay": 3500,
+                            "presence": "composing", 
+                            "linkPreview": False
+                        }
+                    }
+                    
+                    url = f"{evolution_service.base_url}/message/sendText/{evolution_service.instance}"
+                    
+                    headers = {
+                        "Content-Type": "application/json",
+                        "apikey": evolution_service.api_key
+                    }
+                    
+                    response = requests.post(url, json=payload, headers=headers, timeout=30)
+                    
+                    if response.status_code in [200, 201]:
+                        print(f"✅ Mensagem {i+1}/{len(messages)} enviada com sucesso")
+                        if i < len(messages) - 1:  # Delay entre mensagens (só se não for a última)
+                            print(f"⏱️ Aguardando 3.5s antes da próxima mensagem...")
+                            time.sleep(3.5)  # 3.5 seconds delay
+                    else:
+                        print(f"❌ Erro ao enviar mensagem {i+1}: {response.status_code} - {response.text}")
+                        whatsapp_sent = False
+                        break
                 
                 if whatsapp_sent:
                     print(f"✅ Resposta enviada via WhatsApp para {request.phone_number} ({messages_sent} mensagens)")
