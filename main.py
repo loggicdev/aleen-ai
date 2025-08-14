@@ -1152,6 +1152,16 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
     Processa mensagem e envia resposta automaticamente via WhatsApp
     Utiliza memória baseada no número de telefone
     """
+    request_id = f"req_{int(time.time())}_{request.phone_number[-4:]}"
+    
+    print(f"\n{'='*70}")
+    print(f"🚀 INICIANDO PROCESSAMENTO WHATSAPP - ID: {request_id}")
+    print(f"📞 Telefone: {request.phone_number}")
+    print(f"👤 Usuário: {request.user_name}")
+    print(f"💬 Mensagem: {request.message}")
+    print(f"🕐 Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"{'='*70}")
+    
     try:
         if not agents_cache:
             raise HTTPException(status_code=503, detail="Agentes não carregados")
@@ -1286,21 +1296,30 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         
         if request.send_to_whatsapp:
             try:
+                print(f"\n🔄 [{request_id}] INICIANDO ENVIO WHATSAPP")
+                
                 # Quebra a mensagem apenas uma vez
                 messages = evolution_service.split_message(ai_response)
                 messages_sent = len(messages)
+                
+                print(f"📝 [{request_id}] Mensagem IA original ({len(ai_response)} chars):")
+                print(f"   {ai_response[:100]}...")
+                print(f"🔪 [{request_id}] Mensagem quebrada em {len(messages)} partes:")
+                for i, msg in enumerate(messages):
+                    print(f"   {i+1}. ({len(msg)} chars): {msg[:50]}...")
                 
                 # Envia as mensagens já quebradas
                 whatsapp_sent = True
                 clean_number = evolution_service.clean_phone_number(request.phone_number)
                 
-                print(f"📱 Enviando {len(messages)} mensagem(s) para {clean_number}")
-                print(f"🔍 Mensagens quebradas:")
-                for i, msg in enumerate(messages):
-                    print(f"   {i+1}. ({len(msg)} chars): {msg[:50]}...")
+                print(f"📱 [{request_id}] Enviando {len(messages)} mensagem(s) para {clean_number}")
                 
                 # Envia cada mensagem individualmente
                 for i, message in enumerate(messages):
+                    print(f"\n📤 [{request_id}] ENVIANDO MENSAGEM {i+1}/{len(messages)}")
+                    print(f"   📄 Conteúdo: {message[:100]}...")
+                    print(f"   📏 Tamanho: {len(message)} caracteres")
+                    
                     payload = {
                         "number": clean_number,
                         "text": message,
@@ -1320,25 +1339,37 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     
                     response = requests.post(url, json=payload, headers=headers, timeout=30)
                     
+                    print(f"   📡 API Response: {response.status_code}")
                     if response.status_code in [200, 201]:
-                        print(f"✅ Mensagem {i+1}/{len(messages)} enviada com sucesso")
+                        print(f"   ✅ Mensagem {i+1}/{len(messages)} enviada com sucesso")
                         if i < len(messages) - 1:  # Delay entre mensagens (só se não for a última)
-                            print(f"⏱️ Aguardando 3.5s antes da próxima mensagem...")
+                            print(f"   ⏱️ Aguardando 3.5s antes da próxima mensagem...")
                             time.sleep(3.5)  # 3.5 seconds delay
                     else:
-                        print(f"❌ Erro ao enviar mensagem {i+1}: {response.status_code} - {response.text}")
+                        print(f"   ❌ Erro ao enviar mensagem {i+1}: {response.status_code} - {response.text}")
                         whatsapp_sent = False
                         break
                 
+                print(f"\n🏁 [{request_id}] ENVIO FINALIZADO:")
+                print(f"   ✅ Sucesso: {whatsapp_sent}")
+                print(f"   📊 Mensagens enviadas: {messages_sent}")
+                
                 if whatsapp_sent:
-                    print(f"✅ Resposta enviada via WhatsApp para {request.phone_number} ({messages_sent} mensagens)")
-                    print(f"💾 Interação salva na memória do usuário")
+                    print(f"✅ [{request_id}] Resposta enviada via WhatsApp para {request.phone_number} ({messages_sent} mensagens)")
+                    print(f"💾 [{request_id}] Interação salva na memória do usuário")
                 else:
-                    print(f"❌ Falha ao enviar resposta via WhatsApp para {request.phone_number}")
+                    print(f"❌ [{request_id}] Falha ao enviar resposta via WhatsApp para {request.phone_number}")
                     
             except Exception as whatsapp_error:
-                print(f"❌ Erro ao processar envio WhatsApp: {whatsapp_error}")
+                print(f"❌ [{request_id}] Erro ao processar envio WhatsApp: {whatsapp_error}")
                 whatsapp_sent = False
+        
+        print(f"\n🎯 [{request_id}] RESULTADO FINAL:")
+        print(f"   🤖 Agente usado: {initial_agent}")
+        print(f"   📱 WhatsApp enviado: {whatsapp_sent}")
+        print(f"   📊 Mensagens enviadas: {messages_sent}")
+        print(f"   🕐 Processamento concluído: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*70}")
         
         return WhatsAppMessageResponse(
             response=ai_response,
@@ -1350,7 +1381,11 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         )
         
     except Exception as e:
-        print(f"❌ Erro no processamento WhatsApp: {str(e)}")
+        print(f"\n❌ [{request_id if 'request_id' in locals() else 'UNKNOWN'}] ERRO NO PROCESSAMENTO WHATSAPP:")
+        print(f"   🔥 Erro: {str(e)}")
+        print(f"   📋 Tipo: {type(e).__name__}")
+        print(f"   🕐 Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*70}")
         raise HTTPException(status_code=500, detail=f"Erro no processamento WhatsApp: {str(e)}")
 
 @app.post("/send-whatsapp")
@@ -1504,6 +1539,82 @@ async def clear_user_memory_endpoint(phone_number: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao limpar memória: {str(e)}")
+
+# Lista global para armazenar logs das últimas requisições
+request_logs = []
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    """Middleware para logar todas as requisições HTTP"""
+    start_time = time.time()
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    
+    # Captura informações da requisição
+    method = request.method
+    url = str(request.url)
+    client_ip = request.client.host if request.client else "unknown"
+    
+    print(f"\n🌐 [{timestamp}] NOVA REQUISIÇÃO:")
+    print(f"   📍 Método: {method}")
+    print(f"   🔗 URL: {url}")
+    print(f"   🖥️  IP: {client_ip}")
+    
+    # Se for uma requisição WhatsApp, captura mais detalhes
+    if "/whatsapp-chat" in url:
+        print(f"   📱 REQUISIÇÃO WHATSAPP DETECTADA!")
+        
+        # Tenta ler o body se for POST
+        if method == "POST":
+            try:
+                body = await request.body()
+                if body:
+                    import json
+                    try:
+                        data = json.loads(body.decode())
+                        phone = data.get('phone_number', 'N/A')
+                        message = data.get('message', 'N/A')[:100] + '...' if len(data.get('message', '')) > 100 else data.get('message', 'N/A')
+                        print(f"   📞 Telefone: {phone}")
+                        print(f"   💬 Mensagem: {message}")
+                    except Exception as e:
+                        print(f"   📦 Body: {body[:200].decode() if body else 'vazio'}...")
+            except Exception as e:
+                print(f"   ⚠️  Não foi possível ler o body da requisição: {e}")
+    
+    # Processa a requisição
+    response = await call_next(request)
+    
+    # Calcula tempo de processamento
+    process_time = time.time() - start_time
+    
+    print(f"   ✅ Status: {response.status_code}")
+    print(f"   ⏱️  Tempo: {process_time:.2f}s")
+    
+    # Armazena log na lista global (últimas 50 requisições)
+    log_entry = {
+        "timestamp": timestamp,
+        "method": method,
+        "url": url,
+        "client_ip": client_ip,
+        "status_code": response.status_code,
+        "process_time": process_time,
+        "is_whatsapp": "/whatsapp-chat" in url
+    }
+    
+    request_logs.append(log_entry)
+    if len(request_logs) > 50:
+        request_logs.pop(0)  # Remove o mais antigo
+    
+    return response
+
+@app.get("/logs/recent")
+async def get_recent_logs():
+    """Retorna os logs das últimas requisições"""
+    return {
+        "total_logs": len(request_logs),
+        "logs": request_logs[-20:],  # Últimas 20 requisições
+        "whatsapp_requests": [log for log in request_logs if log.get("is_whatsapp")],
+        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    }
 
 if __name__ == "__main__":
     import uvicorn
