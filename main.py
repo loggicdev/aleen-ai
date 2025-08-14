@@ -1132,8 +1132,7 @@ async def chat(request: ChatRequest):
             response = openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=messages,
-                max_completion_tokens=1000,
-                temperature=0.7
+                max_completion_tokens=1000
             )
             
             print(f"✅ OpenAI response recebido")
@@ -1176,8 +1175,7 @@ async def chat(request: ChatRequest):
                 fallback_response = openai_client.chat.completions.create(
                     model="gpt-5-mini",
                     messages=simple_messages,
-                    max_completion_tokens=200,
-                    temperature=0.5
+                    max_completion_tokens=200
                 )
                 
                 return ChatResponse(
@@ -1206,8 +1204,7 @@ async def chat(request: ChatRequest):
             error_response = openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=error_messages,
-                max_completion_tokens=100,
-                temperature=0.3
+                max_completion_tokens=100
             )
             
             return ChatResponse(
@@ -1294,7 +1291,6 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 model="gpt-5-mini",
                 messages=messages,
                 max_completion_tokens=1000,
-                temperature=0.7,
                 tools=AVAILABLE_TOOLS,
                 tool_choice="auto"
             )
@@ -1336,8 +1332,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 final_response = openai_client.chat.completions.create(
                     model="gpt-5-mini",
                     messages=messages,
-                    max_completion_tokens=1000,
-                    temperature=0.7
+                    max_completion_tokens=1000
                 )
                 
                 ai_response = final_response.choices[0].message.content
@@ -1374,8 +1369,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 fallback_response = openai_client.chat.completions.create(
                     model="gpt-5-mini",
                     messages=fallback_messages,
-                    max_completion_tokens=200,
-                    temperature=0.5
+                    max_completion_tokens=200
                 )
                 
                 ai_response = fallback_response.choices[0].message.content
