@@ -434,11 +434,12 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
         
         return {
             "success": True,
-            "message": f"🎉 Conta criada com sucesso!\n\n📧 Email: {email}\n🔑 Senha temporária: {temp_password}\n\nVocê já pode fazer login no app da Aleen usando essas credenciais. Recomendamos alterar sua senha após o primeiro login.",
+            "message": f"🎉 Conta criada com sucesso!\n\n📧 Email: {email}\n🔑 Senha temporária: {temp_password}\n\nVocê já pode fazer login no app da Aleen usando essas credenciais. Recomendamos alterar sua senha após o primeiro login.\n\n🔗 Continue seu onboarding aqui: https://aleen.dp.claudy.host/onboarding/{user_id}",
             "user_id": user_id,
             "temp_password": temp_password,
             "email": email,
-            "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen."
+            "onboarding_url": f"https://aleen.dp.claudy.host/onboarding/{user_id}",
+            "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen, depois complete seu onboarding no link acima."
         }
         
     except Exception as e:
@@ -469,7 +470,7 @@ AVAILABLE_TOOLS = [
         "type": "function", 
         "function": {
             "name": "create_user_and_save_onboarding",
-            "description": "Cria um novo usuário com autenticação Supabase após coletar nome, idade e email durante o onboarding inicial. O usuário receberá uma senha temporária e pode fazer login imediatamente. Use quando o usuário fornecer as 3 informações básicas (nome, idade, email).",
+            "description": "Cria um novo usuário com autenticação Supabase após coletar nome, idade e email durante o onboarding inicial. O usuário receberá uma senha temporária, pode fazer login imediatamente E receberá automaticamente o link de onboarding para continuar o processo na plataforma web. Use quando o usuário fornecer as 3 informações básicas (nome, idade, email).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1274,11 +1275,15 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         # Adiciona instrução de idioma e memória
         memory_instruction = "\n\nCONTEXTO DE MEMÓRIA: Você tem acesso ao histórico desta conversa. Use essas informações para personalizar suas respostas e manter continuidade."
         language_instruction = "\n\nIMPORTANTE: Sempre responda no mesmo idioma que o usuário está usando."
-        tools_instruction = "\n\nFERRAMENTAS DISPONÍVEIS:\n1. 'get_onboarding_questions': Use quando o usuário demonstrar interesse em iniciar o processo de onboarding/cadastro para buscar as perguntas configuradas no banco de dados. NUNCA invente perguntas.\n2. 'create_user_and_save_onboarding': Use APENAS quando o usuário já forneceu as 3 informações básicas (nome, idade, email) para criar uma conta completa com autenticação. Após criar o usuário, informe a senha temporária para ele fazer login."
+        
+        # REGRA CRÍTICA DE UX - Execute-Then-Respond Pattern
+        ux_critical_rule = "\n\n🚨 REGRA CRÍTICA DE UX - EXECUTE-THEN-RESPOND:\n- NUNCA diga 'vou fazer', 'aguarde', 'vou buscar', 'deixe-me consultar'\n- SEMPRE execute a ferramenta PRIMEIRO, depois responda com os resultados\n- SEMPRE inclua os dados obtidos na sua resposta\n- Se houver erro na ferramenta, explique alternativas sem prometer ações futuras"
+        
+        tools_instruction = "\n\nFERRAMENTAS DISPONÍVEIS:\n1. 'get_onboarding_questions': Execute IMEDIATAMENTE quando o usuário demonstrar interesse em iniciar o processo de onboarding. Após executar, apresente as perguntas diretamente na resposta. NUNCA invente perguntas.\n2. 'create_user_and_save_onboarding': Execute IMEDIATAMENTE quando o usuário já forneceu as 3 informações básicas (nome, idade, email). Após executar, informe diretamente o resultado na resposta. Esta ferramenta cria a conta, envia as credenciais E inclui automaticamente o link de onboarding para o usuário continuar o processo."
         
         # Cria mensagens para OpenAI incluindo contexto com memória
         messages = [
-            {"role": "system", "content": agent.instructions + memory_instruction + language_instruction + tools_instruction},
+            {"role": "system", "content": agent.instructions + memory_instruction + language_instruction + ux_critical_rule + tools_instruction},
             {"role": "user", "content": f"Usuário: {request.user_name}\n\nContexto da conversa:\n{conversation_context}"}
         ]
         
@@ -1376,6 +1381,25 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 ai_response = fallback_response.choices[0].message.content
             except:
                 raise HTTPException(status_code=500, detail="AI service temporarily unavailable")
+        
+        # 🔗 LÓGICA DE INCLUSÃO AUTOMÁTICA DE LINKS
+        if request.user_context and request.user_context.user_type == "incomplete_onboarding":
+            # Gera URL de onboarding se não fornecida
+            if not request.user_context.onboarding_url and request.user_context:
+                # Usa user_id se disponível, senão usa phone_number
+                user_identifier = getattr(request.user_context, 'user_id', None) or request.phone_number.replace('+', '')
+                onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_identifier}"
+                print(f"🔗 URL de onboarding gerada automaticamente: {onboarding_url}")
+            else:
+                onboarding_url = request.user_context.onboarding_url
+            
+            # Adiciona o link à resposta se não já contiver
+            if onboarding_url and "🔗" not in ai_response and "http" not in ai_response:
+                original_length = len(ai_response)
+                ai_response += f"\n\n🔗 Finalize seu cadastro aqui: {onboarding_url}"
+                print(f"✅ Link de onboarding adicionado automaticamente à resposta")
+                print(f"   - URL: {onboarding_url}")
+                print(f"   - Resposta expandida de {original_length} para {len(ai_response)} caracteres")
         
         # Salva a nova interação na memória do usuário
         add_to_user_memory(request.phone_number, request.message, ai_response)
