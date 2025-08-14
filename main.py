@@ -666,6 +666,14 @@ class MessageRequest(BaseModel):
     conversation_history: Optional[List[str]] = []
     recommended_agent: Optional[str] = None
 
+class UserContext(BaseModel):
+    has_account: bool = False
+    onboarding_completed: bool = False
+    user_type: str = "new_user"  # 'new_user' | 'incomplete_onboarding' | 'complete_user'
+    onboarding_url: Optional[str] = None
+    is_lead: bool = False
+    is_user: bool = False
+
 class WhatsAppMessageRequest(BaseModel):
     user_id: str
     user_name: str
@@ -674,6 +682,7 @@ class WhatsAppMessageRequest(BaseModel):
     conversation_history: Optional[List[str]] = []
     recommended_agent: Optional[str] = None
     send_to_whatsapp: bool = True
+    user_context: Optional[UserContext] = None
 
 class MessageResponse(BaseModel):
     response: str
@@ -716,6 +725,7 @@ def load_agents_from_supabase():
             'DOUBT': 'support',                       # Prompt fitness em inglês  
             'SALES': 'sales',                         # Prompt fitness em inglês
             'OUT_CONTEXT': 'out_context',             # Agente para mensagens fora de contexto
+            'ONBOARDING_REMINDER': 'onboarding_reminder',  # Agente para onboarding incompleto
             # Mantém compatibilidade com identifiers antigos
             'ONBOARDING_INIT': 'onboarding',
             'GREETING_WITH_MEMORY': 'onboarding',
@@ -831,6 +841,42 @@ Sua missão é dar as boas-vindas a novos contatos, apresentar brevemente o app 
 Sobre a Aleen: Sua personal trainer inteligente que funciona no WhatsApp, cria planos personalizados de treino e nutrição.
 Pergunte se eles querem conhecer mais ou iniciar o teste grátis de 14 dias."""
         },
+        'onboarding_reminder': {
+            'name': 'Aleen Onboarding Reminder',
+            'prompt': """Você é a Aleen, assistente inteligente de fitness e nutrição. O usuário JÁ começou seu cadastro mas ainda não finalizou.
+
+**CONTEXTO IMPORTANTE:** O usuário tem uma conta parcial e precisa completar o onboarding na plataforma web.
+
+**SUA MISSÃO:**
+- Lembrar o usuário de forma amigável e variada sobre completar o cadastro
+- Explicar brevemente os benefícios de finalizar o onboarding
+- Fornecer o link personalizado quando apropriado
+- Ser empática mas não repetitiva
+- IMPORTANTE: Detectar se é primeira vez ou usuário recorrente baseado no histórico da conversa
+
+**REGRAS:**
+- SEMPRE responda no mesmo idioma que o usuário está falando
+- SEMPRE quebre suas mensagens com \\n\\n para leitura mais humana e natural
+- VARIE suas respostas - não seja robótica ou repetitiva
+- Seja motivadora e explique PORQUÊ é importante completar
+- Pode responder dúvidas básicas mas sempre retorne ao onboarding
+- Use emojis para tornar mais humana
+- ANALISE o histórico da conversa para determinar se já falou sobre onboarding antes
+
+**ESTRATÉGIAS DE VARIAÇÃO:**
+1ª interação (histórico vazio): Amigável e explicativa sobre os benefícios
+2ª-3ª interação: Mais direta mas simpática, foque na conveniência  
+4ª+ interação: Pergunte se há alguma dificuldade específica, ofereça ajuda
+
+**BENEFÍCIOS PARA MENCIONAR:**
+- Planos de treino 100% personalizados para seu perfil
+- Cardápio personalizado baseado em suas preferências
+- Acompanhamento inteligente do progresso
+- Suporte 24/7 no WhatsApp
+- Tudo adaptado ao seu estilo de vida
+
+Lembre: O link será fornecido automaticamente pelo sistema quando necessário."""
+        },
         'sales': {
             'name': 'Aleen Sales Agent',
             'prompt': """You are Aleen, the intelligent fitness and nutrition agent focused on helping users start their fitness journey.
@@ -901,8 +947,34 @@ def support_agent():
 # Agent instances (agora referencia o cache)
 agents = agents_cache
 
-def determine_initial_agent(message: str, user_history: List[str], recommended_agent: Optional[str] = None) -> str:
-    """Determina qual agente deve atender baseado na mensagem, histórico e recomendação"""
+def determine_initial_agent(message: str, user_history: List[str], recommended_agent: Optional[str] = None, user_context: Optional[UserContext] = None) -> str:
+    """Determina qual agente deve atender baseado na mensagem, histórico e contexto do usuário"""
+    
+    # Log do contexto de usuário para debugging
+    if user_context:
+        print(f"🔍 UserContext detectado - Tipo: {user_context.user_type}, Account: {user_context.has_account}, Onboarding: {user_context.onboarding_completed}")
+        if user_context.onboarding_url:
+            print(f"🔗 URL de onboarding disponível: {user_context.onboarding_url}")
+    else:
+        print(f"🔍 Nenhum UserContext fornecido - usando lógica padrão")
+    
+    # NOVA LÓGICA: Verifica contexto de usuário primeiro
+    if user_context:
+        # Usuário com onboarding incompleto - precisa de agente especializado
+        if user_context.user_type == "incomplete_onboarding":
+            print(f"🎯 Agente selecionado por contexto: onboarding_reminder (usuário com onboarding incompleto)")
+            return "onboarding_reminder"
+        
+        # Usuário novo - processo normal de onboarding
+        elif user_context.user_type == "new_user":
+            print(f"🎯 Agente selecionado por contexto: onboarding (usuário novo)")
+            return "onboarding"
+        
+        # Usuário completo - prossegue com lógica normal
+        elif user_context.user_type == "complete_user":
+            print(f"🎯 Usuário completo detectado - prosseguindo com lógica normal de seleção")
+            # Continua com a lógica normal abaixo
+            pass
     
     # Se há uma recomendação específica, usa ela
     if recommended_agent and recommended_agent in agents_cache:
@@ -1152,16 +1224,6 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
     Processa mensagem e envia resposta automaticamente via WhatsApp
     Utiliza memória baseada no número de telefone
     """
-    request_id = f"req_{int(time.time())}_{request.phone_number[-4:]}"
-    
-    print(f"\n{'='*70}")
-    print(f"🚀 INICIANDO PROCESSAMENTO WHATSAPP - ID: {request_id}")
-    print(f"📞 Telefone: {request.phone_number}")
-    print(f"👤 Usuário: {request.user_name}")
-    print(f"💬 Mensagem: {request.message}")
-    print(f"🕐 Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*70}")
-    
     try:
         if not agents_cache:
             raise HTTPException(status_code=503, detail="Agentes não carregados")
@@ -1175,11 +1237,25 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         print(f"🤖 Processando mensagem WhatsApp para usuário {request.user_name} ({request.phone_number})")
         print(f"💾 Memória encontrada: {len(user_memory)} mensagens anteriores")
         
-        # Determina agente inicial (pode ser melhorado com base na memória)
+        # Log detalhado do contexto do usuário
+        if request.user_context:
+            print(f"👤 Contexto do usuário:")
+            print(f"   - Tipo: {request.user_context.user_type}")
+            print(f"   - Tem conta: {request.user_context.has_account}")
+            print(f"   - Onboarding completo: {request.user_context.onboarding_completed}")
+            print(f"   - É lead: {request.user_context.is_lead}")
+            print(f"   - É usuário: {request.user_context.is_user}")
+            if request.user_context.onboarding_url:
+                print(f"   - URL onboarding: {request.user_context.onboarding_url}")
+        else:
+            print(f"👤 Nenhum contexto de usuário fornecido")
+        
+        # Determina agente inicial baseado no contexto do usuário
         initial_agent = determine_initial_agent(
             message=request.message,
             user_history=user_memory,
-            recommended_agent=request.recommended_agent
+            recommended_agent=request.recommended_agent,
+            user_context=request.user_context
         )
         
         if initial_agent not in agents_cache:
@@ -1267,6 +1343,20 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 ai_response = response_message.content
                 print(f"💬 Resposta normal sem uso de tools")
             
+            # NOVA LÓGICA: Adicionar link de onboarding se necessário
+            if request.user_context and request.user_context.user_type == "incomplete_onboarding":
+                if request.user_context.onboarding_url:
+                    # Adiciona o link de onboarding à resposta
+                    original_response_length = len(ai_response)
+                    ai_response += f"\\n\\n🔗 Finalize seu cadastro aqui: {request.user_context.onboarding_url}"
+                    print(f"✅ Link de onboarding adicionado à resposta")
+                    print(f"   - URL: {request.user_context.onboarding_url}")
+                    print(f"   - Resposta expandida de {original_response_length} para {len(ai_response)} caracteres")
+                else:
+                    print(f"⚠️ Usuário com onboarding incompleto, mas sem URL de onboarding fornecida")
+            elif request.user_context and request.user_context.user_type == "incomplete_onboarding":
+                print(f"⚠️ Usuário com onboarding incompleto, mas sem URL de onboarding fornecida")
+            
         except Exception as e:
             print(f"❌ Erro ao chamar OpenAI: {e}")
             # Fallback response
@@ -1296,30 +1386,21 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         
         if request.send_to_whatsapp:
             try:
-                print(f"\n🔄 [{request_id}] INICIANDO ENVIO WHATSAPP")
-                
                 # Quebra a mensagem apenas uma vez
                 messages = evolution_service.split_message(ai_response)
                 messages_sent = len(messages)
-                
-                print(f"📝 [{request_id}] Mensagem IA original ({len(ai_response)} chars):")
-                print(f"   {ai_response[:100]}...")
-                print(f"🔪 [{request_id}] Mensagem quebrada em {len(messages)} partes:")
-                for i, msg in enumerate(messages):
-                    print(f"   {i+1}. ({len(msg)} chars): {msg[:50]}...")
                 
                 # Envia as mensagens já quebradas
                 whatsapp_sent = True
                 clean_number = evolution_service.clean_phone_number(request.phone_number)
                 
-                print(f"📱 [{request_id}] Enviando {len(messages)} mensagem(s) para {clean_number}")
+                print(f"📱 Enviando {len(messages)} mensagem(s) para {clean_number}")
+                print(f"🔍 Mensagens quebradas:")
+                for i, msg in enumerate(messages):
+                    print(f"   {i+1}. ({len(msg)} chars): {msg[:50]}...")
                 
                 # Envia cada mensagem individualmente
                 for i, message in enumerate(messages):
-                    print(f"\n📤 [{request_id}] ENVIANDO MENSAGEM {i+1}/{len(messages)}")
-                    print(f"   📄 Conteúdo: {message[:100]}...")
-                    print(f"   📏 Tamanho: {len(message)} caracteres")
-                    
                     payload = {
                         "number": clean_number,
                         "text": message,
@@ -1339,37 +1420,25 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     
                     response = requests.post(url, json=payload, headers=headers, timeout=30)
                     
-                    print(f"   📡 API Response: {response.status_code}")
                     if response.status_code in [200, 201]:
-                        print(f"   ✅ Mensagem {i+1}/{len(messages)} enviada com sucesso")
+                        print(f"✅ Mensagem {i+1}/{len(messages)} enviada com sucesso")
                         if i < len(messages) - 1:  # Delay entre mensagens (só se não for a última)
-                            print(f"   ⏱️ Aguardando 3.5s antes da próxima mensagem...")
+                            print(f"⏱️ Aguardando 3.5s antes da próxima mensagem...")
                             time.sleep(3.5)  # 3.5 seconds delay
                     else:
-                        print(f"   ❌ Erro ao enviar mensagem {i+1}: {response.status_code} - {response.text}")
+                        print(f"❌ Erro ao enviar mensagem {i+1}: {response.status_code} - {response.text}")
                         whatsapp_sent = False
                         break
                 
-                print(f"\n🏁 [{request_id}] ENVIO FINALIZADO:")
-                print(f"   ✅ Sucesso: {whatsapp_sent}")
-                print(f"   📊 Mensagens enviadas: {messages_sent}")
-                
                 if whatsapp_sent:
-                    print(f"✅ [{request_id}] Resposta enviada via WhatsApp para {request.phone_number} ({messages_sent} mensagens)")
-                    print(f"💾 [{request_id}] Interação salva na memória do usuário")
+                    print(f"✅ Resposta enviada via WhatsApp para {request.phone_number} ({messages_sent} mensagens)")
+                    print(f"💾 Interação salva na memória do usuário")
                 else:
-                    print(f"❌ [{request_id}] Falha ao enviar resposta via WhatsApp para {request.phone_number}")
+                    print(f"❌ Falha ao enviar resposta via WhatsApp para {request.phone_number}")
                     
             except Exception as whatsapp_error:
-                print(f"❌ [{request_id}] Erro ao processar envio WhatsApp: {whatsapp_error}")
+                print(f"❌ Erro ao processar envio WhatsApp: {whatsapp_error}")
                 whatsapp_sent = False
-        
-        print(f"\n🎯 [{request_id}] RESULTADO FINAL:")
-        print(f"   🤖 Agente usado: {initial_agent}")
-        print(f"   📱 WhatsApp enviado: {whatsapp_sent}")
-        print(f"   📊 Mensagens enviadas: {messages_sent}")
-        print(f"   🕐 Processamento concluído: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"{'='*70}")
         
         return WhatsAppMessageResponse(
             response=ai_response,
@@ -1381,11 +1450,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         )
         
     except Exception as e:
-        print(f"\n❌ [{request_id if 'request_id' in locals() else 'UNKNOWN'}] ERRO NO PROCESSAMENTO WHATSAPP:")
-        print(f"   🔥 Erro: {str(e)}")
-        print(f"   📋 Tipo: {type(e).__name__}")
-        print(f"   🕐 Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"{'='*70}")
+        print(f"❌ Erro no processamento WhatsApp: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro no processamento WhatsApp: {str(e)}")
 
 @app.post("/send-whatsapp")
@@ -1522,6 +1587,56 @@ async def get_user_memory_endpoint(phone_number: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao recuperar memória: {str(e)}")
 
+@app.post("/test-user-context")
+async def test_user_context(request: WhatsAppMessageRequest):
+    """Endpoint de teste para validar UserContext e seleção de agentes"""
+    try:
+        # Log do teste
+        print(f"🧪 TESTE - UserContext recebido:")
+        if request.user_context:
+            print(f"   - Tipo: {request.user_context.user_type}")
+            print(f"   - Tem conta: {request.user_context.has_account}")
+            print(f"   - Onboarding completo: {request.user_context.onboarding_completed}")
+            print(f"   - URL: {request.user_context.onboarding_url}")
+        else:
+            print(f"   - Nenhum contexto fornecido")
+        
+        # Testa seleção de agente
+        user_memory = get_user_memory(request.phone_number)
+        selected_agent = determine_initial_agent(
+            message=request.message,
+            user_history=user_memory,
+            recommended_agent=request.recommended_agent,
+            user_context=request.user_context
+        )
+        
+        # Simula resposta da IA
+        mock_ai_response = f"Olá {request.user_name}! Esta é uma resposta de teste do agente {selected_agent}."
+        
+        # Testa lógica de adição de link
+        final_response = mock_ai_response
+        link_added = False
+        if request.user_context and request.user_context.user_type == "incomplete_onboarding":
+            if request.user_context.onboarding_url:
+                final_response += f"\\n\\n🔗 Finalize seu cadastro aqui: {request.user_context.onboarding_url}"
+                link_added = True
+        
+        return {
+            "test_success": True,
+            "user_context_received": request.user_context.dict() if request.user_context else None,
+            "selected_agent": selected_agent,
+            "agent_available": selected_agent in agents_cache,
+            "original_response": mock_ai_response,
+            "final_response": final_response,
+            "link_added": link_added,
+            "memory_entries": len(user_memory),
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        print(f"❌ Erro no teste: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro no teste: {str(e)}")
+
 @app.delete("/user-memory/{phone_number}")
 async def clear_user_memory_endpoint(phone_number: str):
     """Limpa a memória/histórico de um usuário"""
@@ -1539,82 +1654,6 @@ async def clear_user_memory_endpoint(phone_number: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao limpar memória: {str(e)}")
-
-# Lista global para armazenar logs das últimas requisições
-request_logs = []
-
-@app.middleware("http")
-async def log_requests(request, call_next):
-    """Middleware para logar todas as requisições HTTP"""
-    start_time = time.time()
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    
-    # Captura informações da requisição
-    method = request.method
-    url = str(request.url)
-    client_ip = request.client.host if request.client else "unknown"
-    
-    print(f"\n🌐 [{timestamp}] NOVA REQUISIÇÃO:")
-    print(f"   📍 Método: {method}")
-    print(f"   🔗 URL: {url}")
-    print(f"   🖥️  IP: {client_ip}")
-    
-    # Se for uma requisição WhatsApp, captura mais detalhes
-    if "/whatsapp-chat" in url:
-        print(f"   📱 REQUISIÇÃO WHATSAPP DETECTADA!")
-        
-        # Tenta ler o body se for POST
-        if method == "POST":
-            try:
-                body = await request.body()
-                if body:
-                    import json
-                    try:
-                        data = json.loads(body.decode())
-                        phone = data.get('phone_number', 'N/A')
-                        message = data.get('message', 'N/A')[:100] + '...' if len(data.get('message', '')) > 100 else data.get('message', 'N/A')
-                        print(f"   📞 Telefone: {phone}")
-                        print(f"   💬 Mensagem: {message}")
-                    except Exception as e:
-                        print(f"   📦 Body: {body[:200].decode() if body else 'vazio'}...")
-            except Exception as e:
-                print(f"   ⚠️  Não foi possível ler o body da requisição: {e}")
-    
-    # Processa a requisição
-    response = await call_next(request)
-    
-    # Calcula tempo de processamento
-    process_time = time.time() - start_time
-    
-    print(f"   ✅ Status: {response.status_code}")
-    print(f"   ⏱️  Tempo: {process_time:.2f}s")
-    
-    # Armazena log na lista global (últimas 50 requisições)
-    log_entry = {
-        "timestamp": timestamp,
-        "method": method,
-        "url": url,
-        "client_ip": client_ip,
-        "status_code": response.status_code,
-        "process_time": process_time,
-        "is_whatsapp": "/whatsapp-chat" in url
-    }
-    
-    request_logs.append(log_entry)
-    if len(request_logs) > 50:
-        request_logs.pop(0)  # Remove o mais antigo
-    
-    return response
-
-@app.get("/logs/recent")
-async def get_recent_logs():
-    """Retorna os logs das últimas requisições"""
-    return {
-        "total_logs": len(request_logs),
-        "logs": request_logs[-20:],  # Últimas 20 requisições
-        "whatsapp_requests": [log for log in request_logs if log.get("is_whatsapp")],
-        "last_updated": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    }
 
 if __name__ == "__main__":
     import uvicorn

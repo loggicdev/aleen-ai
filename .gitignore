@@ -67,3 +67,7 @@ htmlcov/
 local/
 local_*
 debug_*
+
+# BMad and Cursor
+.bmad-core/
+.cursor/
