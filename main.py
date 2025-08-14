@@ -767,7 +767,7 @@ INSTRUÇÃO CRÍTICA DE IDIOMA:
             agents_cache[agent_type] = Agent(
                 name=f"{agent_data.get('name', 'Aleen')} - {agent_type.title()}",
                 instructions=final_prompt,
-                model="gpt-5-mini"
+                model="gpt-4o-mini"
             )
         
         # Se não encontrou agente de sales, cria um baseado no padrão (não deveria acontecer mais)
@@ -805,7 +805,7 @@ Ask about:
             agents_cache['sales'] = Agent(
                 name="Aleen Sales Agent",
                 instructions=agents_config['sales']['prompt'],
-                model="gpt-5-mini"
+                model="gpt-4o-mini"
             )
         
         print(f"Carregados {len(agents_cache)} agentes do Supabase:")
@@ -927,7 +927,7 @@ Politely redirect users back to fitness and nutrition topics where you can help 
         agents_cache[agent_type] = Agent(
             name=config['name'],
             instructions=config['prompt'],
-            model="gpt-5-mini"
+            model="gpt-4o-mini"
         )
 
 # Carrega agentes na inicialização
@@ -1130,7 +1130,7 @@ async def chat(request: ChatRequest):
             
             # Chama OpenAI diretamente
             response = openai_client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=messages,
                 max_completion_tokens=1000
             )
@@ -1173,7 +1173,7 @@ async def chat(request: ChatRequest):
                 ]
                 
                 fallback_response = openai_client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="gpt-4o-mini",
                     messages=simple_messages,
                     max_completion_tokens=200
                 )
@@ -1202,7 +1202,7 @@ async def chat(request: ChatRequest):
             ]
             
             error_response = openai_client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=error_messages,
                 max_completion_tokens=100
             )
@@ -1288,7 +1288,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         try:
             # Primeira chamada com tools disponíveis
             response = openai_client.chat.completions.create(
-                model="gpt-5-mini",
+                model="gpt-4o-mini",
                 messages=messages,
                 max_completion_tokens=1000,
                 tools=AVAILABLE_TOOLS,
@@ -1330,7 +1330,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 
                 # Segunda chamada para gerar resposta final com os resultados das tools
                 final_response = openai_client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="gpt-4o-mini",
                     messages=messages,
                     max_completion_tokens=1000
                 )
@@ -1342,6 +1342,8 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 # Resposta normal sem tools
                 ai_response = response_message.content
                 print(f"💬 Resposta normal sem uso de tools")
+                print(f"🔍 DEBUG: response_message.content = '{ai_response}'")
+                print(f"🔍 DEBUG: Tipo: {type(ai_response)}, Tamanho: {len(ai_response) if ai_response else 'None'}")
             
             # NOVA LÓGICA: Adicionar link de onboarding se necessário
             if request.user_context and request.user_context.user_type == "incomplete_onboarding":
@@ -1367,7 +1369,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 ]
                 
                 fallback_response = openai_client.chat.completions.create(
-                    model="gpt-5-mini",
+                    model="gpt-4o-mini",
                     messages=fallback_messages,
                     max_completion_tokens=200
                 )
