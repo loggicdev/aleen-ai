@@ -2412,6 +2412,33 @@ async def clear_user_memory_endpoint(phone_number: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao limpar memória: {str(e)}")
 
+
+@app.post("/admin/reload-agents")
+async def reload_agents():
+    """Recarrega os agentes do banco de dados (limpa cache)"""
+    try:
+        success = load_agents_from_supabase()
+        if success:
+            return {
+                "success": True,
+                "message": f"Agentes recarregados com sucesso",
+                "agents_loaded": len(agents_cache),
+                "agents": list(agents_cache.keys())
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Falha ao carregar agentes",
+                "agents_loaded": 0
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Erro ao recarregar agentes: {str(e)}",
+            "agents_loaded": len(agents_cache)
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     import os
