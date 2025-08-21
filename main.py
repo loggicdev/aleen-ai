@@ -662,30 +662,32 @@ def get_user_onboarding_responses(phone_number: str):
         
         user_id = user_result.data[0]['id']
         
-        # Busca todas as respostas do onboarding
-        responses_query = """
-        SELECT 
-            oq.field_name,
-            oq.title,
-            oq.question_type,
-            or_resp.response_value,
-            or_resp.response_array
-        FROM onboarding_responses or_resp
-        JOIN onboarding_questions oq ON or_resp.question_id = oq.id
-        WHERE or_resp.user_id = %s
-        ORDER BY oq.step_number
-        """
-        
-        responses_result = supabase.rpc('exec_sql', {
-            'query': responses_query,
-            'params': [user_id]
-        }).execute()
-        
-        return {
-            "success": True,
-            "user_id": user_id,
-            "responses": responses_result.data if responses_result.data else []
-        }
+        # Busca respostas do onboarding diretamente
+        try:
+            responses_result = supabase.table('onboarding_responses').select('*').eq('user_id', user_id).execute()
+            
+            if not responses_result.data:
+                return {
+                    "success": False,
+                    "message": "Nenhuma resposta de onboarding encontrada para este usuário",
+                    "responses": [],
+                    "user_id": user_id
+                }
+            
+            return {
+                "success": True,
+                "user_id": user_id,
+                "responses": responses_result.data,
+                "message": f"Encontradas {len(responses_result.data)} respostas de onboarding"
+            }
+            
+        except Exception as db_error:
+            return {
+                "success": False,
+                "error": f"Erro na consulta do banco: {str(db_error)}",
+                "responses": [],
+                "user_id": user_id
+            }
         
     except Exception as e:
         return {
