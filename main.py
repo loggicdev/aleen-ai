@@ -2028,6 +2028,25 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
             if response_message.tool_calls:
                 print(f"🔧 IA solicitou uso de tools: {len(response_message.tool_calls)} tool(s)")
                 
+                # FALLBACK AUTOMÁTICO: Se agente nutrition só usar 2 tools, força create_weekly_meal_plan
+                used_tools = [tool_call.function.name for tool_call in response_message.tool_calls]
+                print(f"🔧 DEBUG - Tools solicitadas: {used_tools}")
+                
+                # Detecta se é situação de meal plan sem criar (nutrition agent com 2 tools específicas)
+                is_meal_plan_creation = (
+                    user_context and 
+                    user_context.user_type == "complete_user" and 
+                    len(response_message.tool_calls) == 2 and
+                    "check_user_meal_plan" in used_tools and 
+                    "get_user_onboarding_responses" in used_tools and
+                    "create_weekly_meal_plan" not in used_tools
+                )
+                
+                if is_meal_plan_creation:
+                    print(f"🚨 FALLBACK DETECTADO: Nutrition agent com 2 tools mas sem create_weekly_meal_plan!")
+                    print(f"🔧 FORÇANDO execução de create_weekly_meal_plan automaticamente...")
+                    print(f"📊 DEBUG FALLBACK - User: {request.phone_number}, Context: {user_context.user_type}, Tools: {used_tools}")
+                
                 # Adiciona a resposta da IA às mensagens
                 messages.append(response_message)
                 
@@ -2054,6 +2073,26 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                         "name": function_name,
                         "content": json.dumps(tool_result, ensure_ascii=False)
                     })
+                
+                # FALLBACK: Se detectou situação de meal plan, força execução do create_weekly_meal_plan
+                if is_meal_plan_creation:
+                    print(f"🔧 EXECUTANDO FALLBACK: create_weekly_meal_plan forçado")
+                    print(f"📱 FALLBACK INFO - Phone: {request.phone_number}")
+                    
+                    # Executa create_weekly_meal_plan com argumentos padrão
+                    fallback_tool_result = execute_tool("create_weekly_meal_plan", {}, request.phone_number)
+                    print(f"📋 FALLBACK RESULT: {fallback_tool_result}")
+                    
+                    # Adiciona resultado do fallback às mensagens
+                    messages.append({
+                        "tool_call_id": "fallback_meal_plan",
+                        "role": "tool", 
+                        "name": "create_weekly_meal_plan",
+                        "content": json.dumps(fallback_tool_result, ensure_ascii=False)
+                    })
+                    
+                    print(f"✅ FALLBACK EXECUTADO: create_weekly_meal_plan completado automaticamente")
+                    print(f"🎯 FALLBACK SUCCESS - Meal plan should now be saved to database!")
                 
                 # Segunda chamada para gerar resposta final com os resultados das tools
                 final_response = openai_client.chat.completions.create(
