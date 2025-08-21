@@ -551,6 +551,67 @@ AVAILABLE_TOOLS = [
                 "required": ["plan_name"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_recipe_with_ingredients",
+            "description": "Cria uma nova receita com ingredientes específicos no banco de dados. Use quando o usuário quiser criar uma receita personalizada ou quando uma receita mencionada não existir no sistema.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipe_name": {
+                        "type": "string",
+                        "description": "Nome da receita"
+                    },
+                    "description": {
+                        "type": "string", 
+                        "description": "Descrição da receita (opcional)"
+                    },
+                    "ingredients_data": {
+                        "type": "array",
+                        "description": "Lista de ingredientes com quantidades",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "food_name": {"type": "string"},
+                                "quantity_grams": {"type": "number"},
+                                "display_unit": {"type": "string"}
+                            },
+                            "required": ["food_name", "quantity_grams"]
+                        }
+                    }
+                },
+                "required": ["recipe_name", "ingredients_data"]
+            }
+        }
+    },
+    {
+        "type": "function", 
+        "function": {
+            "name": "register_complete_meal_plan",
+            "description": "Registra um plano alimentar completo seguindo a estrutura completa do guia de desenvolvimento. Use quando tiver um plano alimentar detalhado com todas as refeições da semana já definidas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_data": {
+                        "type": "object",
+                        "description": "Dados completos do plano no formato: {planName, startDate, endDate, weeklyPlan}",
+                        "properties": {
+                            "planName": {"type": "string"},
+                            "startDate": {"type": "string", "format": "date"},
+                            "endDate": {"type": "string", "format": "date"},
+                            "weeklyPlan": {
+                                "type": "object",
+                                "description": "Refeições organizadas por dia da semana"
+                            }
+                        },
+                        "required": ["planName", "startDate", "endDate", "weeklyPlan"]
+                    }
+                },
+                "required": ["plan_data"]
+            }
+        }
     }
 ]
 
@@ -683,7 +744,24 @@ def get_available_foods():
         }
 
 def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: dict):
-    """Cria um plano alimentar semanal simples"""
+    """
+    Cria um plano alimentar semanal completo seguindo o guia de desenvolvimento.
+    
+    Args:
+        phone_number: Telefone do usuário
+        plan_name: Nome do plano
+        weekly_meals: Estrutura JSON do plano semanal no formato:
+        {
+            "startDate": "2025-09-01",
+            "endDate": "2025-12-01", 
+            "weeklyPlan": {
+                "segunda-feira": [
+                    {"mealType": "Café da Manhã", "recipeName": "Ovos com Café", "order": 1}
+                ],
+                ...
+            }
+        }
+    """
     try:
         # Busca usuário pelo telefone
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -696,16 +774,22 @@ def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: dic
         
         user_id = user_result.data[0]['id']
         
-        # Cria o plano principal
-        from datetime import datetime, timedelta
-        start_date = datetime.now().date()
-        end_date = start_date + timedelta(days=7)
+        # Passo 1: Desativar planos antigos (opcional, mas recomendado)
+        supabase.table('user_meal_plans').update({
+            'is_active': False
+        }).eq('user_id', user_id).execute()
         
+        # Definir datas padrão se não fornecidas
+        from datetime import datetime, timedelta
+        start_date = weekly_meals.get('startDate', datetime.now().date().isoformat())
+        end_date = weekly_meals.get('endDate', (datetime.now().date() + timedelta(days=7)).isoformat())
+        
+        # Passo 2: Criar o registro principal em user_meal_plans
         plan_result = supabase.table('user_meal_plans').insert({
             'user_id': user_id,
             'name': plan_name,
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat(),
+            'start_date': start_date,
+            'end_date': end_date,
             'is_active': True
         }).execute()
         
@@ -717,12 +801,71 @@ def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: dic
         
         plan_id = plan_result.data[0]['id']
         
+        # Passo 3: Processar o plano semanal se fornecido
+        weekly_plan = weekly_meals.get('weeklyPlan', {})
+        if weekly_plan:
+            # Extrair todos os nomes de receitas únicos do JSON
+            recipe_names = []
+            for day, meals in weekly_plan.items():
+                for meal in meals:
+                    recipe_name = meal.get('recipeName')
+                    if recipe_name and recipe_name not in recipe_names:
+                        recipe_names.append(recipe_name)
+            
+            if recipe_names:
+                # Buscar IDs das receitas existentes no banco
+                recipes_result = supabase.table('recipes').select('id, name').in_('name', recipe_names).execute()
+                
+                # Criar mapa de nome para ID
+                recipe_name_to_id_map = {}
+                for recipe in recipes_result.data:
+                    recipe_name_to_id_map[recipe['name']] = recipe['id']
+                
+                # Preparar registros para inserir em plan_meals
+                meals_to_insert = []
+                recipes_not_found = []
+                
+                for day, meals in weekly_plan.items():
+                    for meal in meals:
+                        recipe_name = meal.get('recipeName')
+                        meal_type = meal.get('mealType')
+                        order = meal.get('order', 1)
+                        
+                        if recipe_name in recipe_name_to_id_map:
+                            meals_to_insert.append({
+                                'user_meal_plan_id': plan_id,
+                                'day_of_week': day,
+                                'meal_type': meal_type,
+                                'recipe_id': recipe_name_to_id_map[recipe_name],
+                                'display_order': order
+                            })
+                        else:
+                            recipes_not_found.append(recipe_name)
+                
+                # Passo 4: Inserir as refeições em plan_meals
+                if meals_to_insert:
+                    supabase.table('plan_meals').insert(meals_to_insert).execute()
+                
+                result_message = f"Plano alimentar '{plan_name}' criado com sucesso!"
+                if recipes_not_found:
+                    result_message += f" Receitas não encontradas na base de dados: {', '.join(recipes_not_found)}"
+                
+                return {
+                    "success": True,
+                    "message": result_message,
+                    "plan_id": plan_id,
+                    "user_id": user_id,
+                    "meals_created": len(meals_to_insert),
+                    "recipes_not_found": recipes_not_found
+                }
+            
+        # Se não houver plano semanal, retornar apenas o plano base criado
         return {
             "success": True,
             "message": f"Plano alimentar '{plan_name}' criado com sucesso!",
             "plan_id": plan_id,
             "user_id": user_id,
-            "instructions": "Plano criado na base de dados. As refeições específicas podem ser definidas posteriormente conforme necessário."
+            "instructions": "Plano base criado. As refeições específicas podem ser definidas posteriormente conforme necessário."
         }
         
     except Exception as e:
@@ -730,6 +873,219 @@ def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: dic
             "success": False,
             "error": f"Erro ao criar plano alimentar: {str(e)}"
         }
+
+
+def create_recipe_with_ingredients(recipe_name: str, description: str, ingredients_data: list):
+    """
+    Cria uma nova receita com seus ingredientes no banco de dados.
+    
+    Args:
+        recipe_name: Nome da receita
+        description: Descrição da receita (opcional)
+        ingredients_data: Lista de ingredientes no formato:
+        [
+            {"food_name": "Peito de frango", "quantity_grams": 150, "display_unit": "150g"},
+            {"food_name": "Arroz integral", "quantity_grams": 100, "display_unit": "1/2 xícara"}
+        ]
+    
+    Returns:
+        dict: Resultado da operação com recipe_id se bem-sucedida
+    """
+    try:
+        # Criar a receita
+        recipe_result = supabase.table('recipes').insert({
+            'name': recipe_name,
+            'description': description or f"Receita de {recipe_name} criada automaticamente"
+        }).execute()
+        
+        if not recipe_result.data:
+            return {
+                "success": False,
+                "message": "Erro ao criar receita"
+            }
+        
+        recipe_id = recipe_result.data[0]['id']
+        
+        # Se há ingredientes, buscar seus IDs e criar os relacionamentos
+        if ingredients_data:
+            food_names = [ingredient['food_name'] for ingredient in ingredients_data]
+            
+            # Buscar IDs dos alimentos
+            foods_result = supabase.table('foods').select('id, name').in_('name', food_names).execute()
+            
+            # Criar mapa de nome para ID
+            food_name_to_id_map = {}
+            for food in foods_result.data:
+                food_name_to_id_map[food['name']] = food['id']
+            
+            # Preparar ingredientes para inserir
+            recipe_ingredients = []
+            foods_not_found = []
+            
+            for ingredient in ingredients_data:
+                food_name = ingredient['food_name']
+                if food_name in food_name_to_id_map:
+                    recipe_ingredients.append({
+                        'recipe_id': recipe_id,
+                        'food_id': food_name_to_id_map[food_name],
+                        'quantity_in_grams': ingredient['quantity_grams'],
+                        'display_unit': ingredient.get('display_unit', f"{ingredient['quantity_grams']}g")
+                    })
+                else:
+                    foods_not_found.append(food_name)
+            
+            # Inserir ingredientes da receita
+            if recipe_ingredients:
+                supabase.table('recipe_ingredients').insert(recipe_ingredients).execute()
+            
+            result_message = f"Receita '{recipe_name}' criada com sucesso!"
+            if foods_not_found:
+                result_message += f" Alimentos não encontrados: {', '.join(foods_not_found)}"
+            
+            return {
+                "success": True,
+                "message": result_message,
+                "recipe_id": recipe_id,
+                "ingredients_added": len(recipe_ingredients),
+                "foods_not_found": foods_not_found
+            }
+        
+        # Receita criada sem ingredientes
+        return {
+            "success": True,
+            "message": f"Receita '{recipe_name}' criada com sucesso (sem ingredientes)!",
+            "recipe_id": recipe_id
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Erro ao criar receita: {str(e)}"
+        }
+
+
+def register_complete_meal_plan(phone_number: str, plan_data: dict):
+    """
+    Função completa para registrar um plano alimentar seguindo exatamente o guia fornecido.
+    
+    Args:
+        phone_number: Telefone do usuário
+        plan_data: JSON completo do plano no formato do guia:
+        {
+            "planName": "Plano de Cutting - Foco em Proteína",
+            "startDate": "2025-09-01", 
+            "endDate": "2025-12-01",
+            "weeklyPlan": {
+                "segunda-feira": [
+                    {"mealType": "Café da Manhã", "recipeName": "Ovos com Café", "order": 1}
+                ],
+                ...
+            }
+        }
+    """
+    try:
+        # Buscar usuário pelo telefone
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            return {
+                "success": False,
+                "message": "Usuário não encontrado"
+            }
+        
+        user_id = user_result.data[0]['id']
+        
+        # Passo 1: Desativar planos antigos
+        supabase.table('user_meal_plans').update({
+            'is_active': False
+        }).eq('user_id', user_id).execute()
+        
+        # Passo 2: Criar o novo plano
+        plan_result = supabase.table('user_meal_plans').insert({
+            'user_id': user_id,
+            'name': plan_data['planName'],
+            'start_date': plan_data['startDate'],
+            'end_date': plan_data['endDate'],
+            'is_active': True
+        }).execute()
+        
+        if not plan_result.data:
+            return {
+                "success": False,
+                "message": "Falha ao criar o plano: Erro na inserção do plano principal"
+            }
+        
+        new_plan_id = plan_result.data[0]['id']
+        
+        # Passo 3: Mapear nomes de receitas para IDs
+        weekly_plan = plan_data.get('weeklyPlan', {})
+        recipe_names = list(set([
+            meal['recipeName'] 
+            for day_meals in weekly_plan.values() 
+            for meal in day_meals
+        ]))
+        
+        if not recipe_names:
+            return {
+                "success": True,
+                "message": f"Plano '{plan_data['planName']}' criado sem refeições específicas",
+                "plan_id": new_plan_id
+            }
+        
+        # Buscar receitas existentes
+        recipes_result = supabase.table('recipes').select('id, name').in_('name', recipe_names).execute()
+        recipe_name_to_id_map = {recipe['name']: recipe['id'] for recipe in recipes_result.data}
+        
+        # Passo 4: Preparar e inserir as refeições
+        meals_to_insert = []
+        recipes_not_found = []
+        
+        for day, meals in weekly_plan.items():
+            for meal in meals:
+                recipe_name = meal['recipeName']
+                recipe_id = recipe_name_to_id_map.get(recipe_name)
+                
+                if recipe_id:
+                    meals_to_insert.append({
+                        'user_meal_plan_id': new_plan_id,
+                        'day_of_week': day,
+                        'meal_type': meal['mealType'],
+                        'recipe_id': recipe_id,
+                        'display_order': meal['order']
+                    })
+                else:
+                    recipes_not_found.append(recipe_name)
+        
+        # Inserir refeições
+        if meals_to_insert:
+            insert_result = supabase.table('plan_meals').insert(meals_to_insert).execute()
+            if not insert_result.data:
+                # Em um cenário real, deveria fazer rollback do plano criado
+                return {
+                    "success": False,
+                    "message": "Falha ao inserir as refeições do plano"
+                }
+        
+        # Resultado final
+        result = {
+            "success": True,
+            "plan_id": new_plan_id,
+            "message": f"Plano '{plan_data['planName']}' registrado com sucesso!",
+            "meals_registered": len(meals_to_insert)
+        }
+        
+        if recipes_not_found:
+            result["warning"] = f"Receitas não encontradas: {', '.join(recipes_not_found)}"
+            result["recipes_not_found"] = recipes_not_found
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Falha ao registrar plano: {str(e)}"
+        }
+
 
 # Executor das tools
 def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
@@ -771,6 +1127,22 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             plan_name=arguments.get('plan_name'),
             weekly_meals=arguments.get('weekly_meals')
         )
+    
+    elif tool_name == "create_recipe_with_ingredients":
+        return create_recipe_with_ingredients(
+            recipe_name=arguments.get('recipe_name'),
+            description=arguments.get('description'),
+            ingredients_data=arguments.get('ingredients_data')
+        )
+    
+    elif tool_name == "register_complete_meal_plan":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return register_complete_meal_plan(
+            phone_number=context_phone,
+            plan_data=arguments.get('plan_data')
+        )
+    
     else:
         return {"error": f"Tool '{tool_name}' não encontrada"}
 
