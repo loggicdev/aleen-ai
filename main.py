@@ -522,72 +522,33 @@ AVAILABLE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "get_available_foods",
+            "description": "Busca todos os alimentos disponíveis no banco de dados com informações nutricionais. Use SEMPRE antes de criar receitas ou planos alimentares.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_weekly_meal_plan",
-            "description": "Cria um plano alimentar semanal completo para o usuário atual baseado no seu perfil de onboarding.",
+            "description": "Cria um plano alimentar semanal básico para o usuário atual. A IA deve usar os alimentos disponíveis (get_available_foods) para criar sugestões de refeições personalizadas.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "plan_name": {
                         "type": "string",
-                        "description": "Nome do plano alimentar"
+                        "description": "Nome do plano alimentar (ex: 'Plano de Emagrecimento - Semana 1')"
                     },
                     "weekly_meals": {
-                        "type": "array",
-                        "description": "Array com todas as refeições da semana",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "day_of_week": {
-                                    "type": "string",
-                                    "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-                                },
-                                "meal_type": {
-                                    "type": "string",
-                                    "enum": ["breakfast", "lunch", "dinner", "snack"]
-                                },
-                                "recipe_name": {
-                                    "type": "string",
-                                    "description": "Nome da receita/refeição"
-                                },
-                                "description": {
-                                    "type": "string",
-                                    "description": "Descrição detalhada da refeição"
-                                },
-                                "ingredients": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "name": {
-                                                "type": "string",
-                                                "description": "Nome do ingrediente"
-                                            },
-                                            "quantity": {
-                                                "type": "number",
-                                                "description": "Quantidade em gramas"
-                                            },
-                                            "calories_per_100g": {
-                                                "type": "number"
-                                            },
-                                            "protein_per_100g": {
-                                                "type": "number"
-                                            },
-                                            "carbs_per_100g": {
-                                                "type": "number"
-                                            },
-                                            "fat_per_100g": {
-                                                "type": "number"
-                                            }
-                                        },
-                                        "required": ["name", "quantity", "calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g"]
-                                    }
-                                }
-                            },
-                            "required": ["day_of_week", "meal_type", "recipe_name", "description", "ingredients"]
-                        }
+                        "type": "object",
+                        "description": "Objeto simples com estrutura livre para organizar as refeições da semana. A IA pode definir a estrutura conforme necessário."
                     }
                 },
-                "required": ["plan_name", "weekly_meals"]
+                "required": ["plan_name"]
             }
         }
     }
@@ -696,8 +657,33 @@ def get_user_onboarding_responses(phone_number: str):
             "responses": []
         }
 
-def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: list):
-    """Cria um plano alimentar semanal completo"""
+def get_available_foods():
+    """Busca todos os alimentos disponíveis no banco de dados com informações nutricionais"""
+    try:
+        foods_result = supabase.table('foods').select('*').execute()
+        
+        if not foods_result.data:
+            return {
+                "success": False,
+                "message": "Nenhum alimento encontrado no banco de dados",
+                "foods": []
+            }
+        
+        return {
+            "success": True,
+            "message": f"Encontrados {len(foods_result.data)} alimentos disponíveis",
+            "foods": foods_result.data
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Erro ao buscar alimentos: {str(e)}",
+            "foods": []
+        }
+
+def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: dict):
+    """Cria um plano alimentar semanal simples"""
     try:
         # Busca usuário pelo telefone
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -731,79 +717,12 @@ def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: lis
         
         plan_id = plan_result.data[0]['id']
         
-        # Processa cada refeição da semana
-        created_meals = []
-        
-        for meal in weekly_meals:
-            try:
-                # Cria a receita primeiro
-                recipe_result = supabase.table('recipes').insert({
-                    'name': meal['recipe_name'],
-                    'description': meal['description']
-                }).execute()
-                
-                if not recipe_result.data:
-                    print(f"Erro ao criar receita: {meal['recipe_name']}")
-                    continue
-                
-                recipe_id = recipe_result.data[0]['id']
-                
-                # Processa ingredientes
-                for ingredient in meal['ingredients']:
-                    # Verifica se o alimento já existe
-                    food_result = supabase.table('foods').select('id').eq('name', ingredient['name']).execute()
-                    
-                    if food_result.data:
-                        food_id = food_result.data[0]['id']
-                    else:
-                        # Cria novo alimento
-                        food_create = supabase.table('foods').insert({
-                            'name': ingredient['name'],
-                            'calories_per_100g': ingredient['calories_per_100g'],
-                            'protein_per_100g': ingredient['protein_per_100g'],
-                            'carbs_per_100g': ingredient['carbs_per_100g'],
-                            'fat_per_100g': ingredient['fat_per_100g']
-                        }).execute()
-                        
-                        if food_create.data:
-                            food_id = food_create.data[0]['id']
-                        else:
-                            continue
-                    
-                    # Adiciona ingrediente à receita
-                    supabase.table('recipe_ingredients').insert({
-                        'recipe_id': recipe_id,
-                        'food_id': food_id,
-                        'quantity_in_grams': ingredient['quantity'],
-                        'display_unit': 'g'
-                    }).execute()
-                
-                # Adiciona refeição ao plano
-                plan_meal_result = supabase.table('plan_meals').insert({
-                    'user_meal_plan_id': plan_id,
-                    'day_of_week': meal['day_of_week'],
-                    'meal_type': meal['meal_type'],
-                    'recipe_id': recipe_id,
-                    'display_order': 0
-                }).execute()
-                
-                if plan_meal_result.data:
-                    created_meals.append({
-                        'day': meal['day_of_week'],
-                        'meal_type': meal['meal_type'],
-                        'recipe': meal['recipe_name']
-                    })
-                    
-            except Exception as meal_error:
-                print(f"Erro ao processar refeição {meal['recipe_name']}: {str(meal_error)}")
-                continue
-        
         return {
             "success": True,
             "message": f"Plano alimentar '{plan_name}' criado com sucesso!",
             "plan_id": plan_id,
-            "meals_created": len(created_meals),
-            "meals": created_meals
+            "user_id": user_id,
+            "instructions": "Plano criado na base de dados. As refeições específicas podem ser definidas posteriormente conforme necessário."
         }
         
     except Exception as e:
@@ -842,6 +761,8 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
         if not context_phone:
             return {"error": "Telefone não disponível no contexto"}
         return get_user_onboarding_responses(context_phone)
+    elif tool_name == "get_available_foods":
+        return get_available_foods()
     elif tool_name == "create_weekly_meal_plan":
         if not context_phone:
             return {"error": "Telefone não disponível no contexto"}
