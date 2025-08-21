@@ -494,8 +494,335 @@ AVAILABLE_TOOLS = [
                 "required": ["name", "age", "email", "phone"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_user_meal_plan",
+            "description": "Verifica se o usuário já possui um plano alimentar ativo. Use sempre antes de criar um novo plano.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Número de telefone do usuário"
+                    }
+                },
+                "required": ["phone_number"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_onboarding_responses",
+            "description": "Busca todas as respostas do onboarding do usuário para analisar perfil e necessidades nutricionais.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Número de telefone do usuário"
+                    }
+                },
+                "required": ["phone_number"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_weekly_meal_plan",
+            "description": "Cria um plano alimentar semanal completo para o usuário baseado no seu perfil de onboarding.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phone_number": {
+                        "type": "string",
+                        "description": "Número de telefone do usuário"
+                    },
+                    "plan_name": {
+                        "type": "string",
+                        "description": "Nome do plano alimentar"
+                    },
+                    "weekly_meals": {
+                        "type": "array",
+                        "description": "Array com todas as refeições da semana",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day_of_week": {
+                                    "type": "string",
+                                    "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+                                },
+                                "meal_type": {
+                                    "type": "string",
+                                    "enum": ["breakfast", "lunch", "dinner", "snack"]
+                                },
+                                "recipe_name": {
+                                    "type": "string",
+                                    "description": "Nome da receita/refeição"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Descrição detalhada da refeição"
+                                },
+                                "ingredients": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name": {
+                                                "type": "string",
+                                                "description": "Nome do ingrediente"
+                                            },
+                                            "quantity": {
+                                                "type": "number",
+                                                "description": "Quantidade em gramas"
+                                            },
+                                            "calories_per_100g": {
+                                                "type": "number"
+                                            },
+                                            "protein_per_100g": {
+                                                "type": "number"
+                                            },
+                                            "carbs_per_100g": {
+                                                "type": "number"
+                                            },
+                                            "fat_per_100g": {
+                                                "type": "number"
+                                            }
+                                        },
+                                        "required": ["name", "quantity", "calories_per_100g", "protein_per_100g", "carbs_per_100g", "fat_per_100g"]
+                                    }
+                                }
+                            },
+                            "required": ["day_of_week", "meal_type", "recipe_name", "description", "ingredients"]
+                        }
+                    }
+                },
+                "required": ["phone_number", "plan_name", "weekly_meals"]
+            }
+        }
     }
 ]
+
+# Implementações das tools para planos alimentares
+def check_user_meal_plan(phone_number: str):
+    """Verifica se o usuário já possui um plano alimentar ativo e se completou o onboarding"""
+    try:
+        # Busca usuário pelo telefone com informações de onboarding
+        user_result = supabase.table('users').select('id, onboarding').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            return {
+                "has_plan": False,
+                "message": "Usuário não encontrado",
+                "user_id": None,
+                "onboarding_completed": False
+            }
+        
+        user_data = user_result.data[0]
+        user_id = user_data['id']
+        onboarding_completed = user_data.get('onboarding', False)
+        
+        # Se onboarding não foi completado, retorna informação
+        if not onboarding_completed:
+            return {
+                "has_plan": False,
+                "message": "Usuário precisa completar o onboarding antes de criar plano alimentar",
+                "user_id": user_id,
+                "onboarding_completed": False
+            }
+        
+        # Verifica se há plano ativo
+        plan_result = supabase.table('user_meal_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        
+        if plan_result.data:
+            return {
+                "has_plan": True,
+                "plan": plan_result.data[0],
+                "user_id": user_id,
+                "onboarding_completed": True
+            }
+        else:
+            return {
+                "has_plan": False,
+                "message": "Usuário não possui plano alimentar ativo",
+                "user_id": user_id,
+                "onboarding_completed": True
+            }
+            
+    except Exception as e:
+        return {
+            "has_plan": False,
+            "error": f"Erro ao verificar plano: {str(e)}",
+            "user_id": None,
+            "onboarding_completed": False
+        }
+
+def get_user_onboarding_responses(phone_number: str):
+    """Busca todas as respostas do onboarding do usuário"""
+    try:
+        # Busca usuário pelo telefone
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            return {
+                "success": False,
+                "message": "Usuário não encontrado",
+                "responses": []
+            }
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca todas as respostas do onboarding
+        responses_query = """
+        SELECT 
+            oq.field_name,
+            oq.title,
+            oq.question_type,
+            or_resp.response_value,
+            or_resp.response_array
+        FROM onboarding_responses or_resp
+        JOIN onboarding_questions oq ON or_resp.question_id = oq.id
+        WHERE or_resp.user_id = %s
+        ORDER BY oq.step_number
+        """
+        
+        responses_result = supabase.rpc('exec_sql', {
+            'query': responses_query,
+            'params': [user_id]
+        }).execute()
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "responses": responses_result.data if responses_result.data else []
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Erro ao buscar respostas: {str(e)}",
+            "responses": []
+        }
+
+def create_weekly_meal_plan(phone_number: str, plan_name: str, weekly_meals: list):
+    """Cria um plano alimentar semanal completo"""
+    try:
+        # Busca usuário pelo telefone
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            return {
+                "success": False,
+                "message": "Usuário não encontrado"
+            }
+        
+        user_id = user_result.data[0]['id']
+        
+        # Cria o plano principal
+        from datetime import datetime, timedelta
+        start_date = datetime.now().date()
+        end_date = start_date + timedelta(days=7)
+        
+        plan_result = supabase.table('user_meal_plans').insert({
+            'user_id': user_id,
+            'name': plan_name,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'is_active': True
+        }).execute()
+        
+        if not plan_result.data:
+            return {
+                "success": False,
+                "message": "Erro ao criar plano principal"
+            }
+        
+        plan_id = plan_result.data[0]['id']
+        
+        # Processa cada refeição da semana
+        created_meals = []
+        
+        for meal in weekly_meals:
+            try:
+                # Cria a receita primeiro
+                recipe_result = supabase.table('recipes').insert({
+                    'name': meal['recipe_name'],
+                    'description': meal['description']
+                }).execute()
+                
+                if not recipe_result.data:
+                    print(f"Erro ao criar receita: {meal['recipe_name']}")
+                    continue
+                
+                recipe_id = recipe_result.data[0]['id']
+                
+                # Processa ingredientes
+                for ingredient in meal['ingredients']:
+                    # Verifica se o alimento já existe
+                    food_result = supabase.table('foods').select('id').eq('name', ingredient['name']).execute()
+                    
+                    if food_result.data:
+                        food_id = food_result.data[0]['id']
+                    else:
+                        # Cria novo alimento
+                        food_create = supabase.table('foods').insert({
+                            'name': ingredient['name'],
+                            'calories_per_100g': ingredient['calories_per_100g'],
+                            'protein_per_100g': ingredient['protein_per_100g'],
+                            'carbs_per_100g': ingredient['carbs_per_100g'],
+                            'fat_per_100g': ingredient['fat_per_100g']
+                        }).execute()
+                        
+                        if food_create.data:
+                            food_id = food_create.data[0]['id']
+                        else:
+                            continue
+                    
+                    # Adiciona ingrediente à receita
+                    supabase.table('recipe_ingredients').insert({
+                        'recipe_id': recipe_id,
+                        'food_id': food_id,
+                        'quantity_in_grams': ingredient['quantity'],
+                        'display_unit': 'g'
+                    }).execute()
+                
+                # Adiciona refeição ao plano
+                plan_meal_result = supabase.table('plan_meals').insert({
+                    'user_meal_plan_id': plan_id,
+                    'day_of_week': meal['day_of_week'],
+                    'meal_type': meal['meal_type'],
+                    'recipe_id': recipe_id,
+                    'display_order': 0
+                }).execute()
+                
+                if plan_meal_result.data:
+                    created_meals.append({
+                        'day': meal['day_of_week'],
+                        'meal_type': meal['meal_type'],
+                        'recipe': meal['recipe_name']
+                    })
+                    
+            except Exception as meal_error:
+                print(f"Erro ao processar refeição {meal['recipe_name']}: {str(meal_error)}")
+                continue
+        
+        return {
+            "success": True,
+            "message": f"Plano alimentar '{plan_name}' criado com sucesso!",
+            "plan_id": plan_id,
+            "meals_created": len(created_meals),
+            "meals": created_meals
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Erro ao criar plano alimentar: {str(e)}"
+        }
 
 # Executor das tools
 def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
@@ -518,6 +845,16 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             age=arguments.get('age'), 
             email=arguments.get('email'),
             phone=phone
+        )
+    elif tool_name == "check_user_meal_plan":
+        return check_user_meal_plan(arguments.get('phone_number'))
+    elif tool_name == "get_user_onboarding_responses":
+        return get_user_onboarding_responses(arguments.get('phone_number'))
+    elif tool_name == "create_weekly_meal_plan":
+        return create_weekly_meal_plan(
+            phone_number=arguments.get('phone_number'),
+            plan_name=arguments.get('plan_name'),
+            weekly_meals=arguments.get('weekly_meals')
         )
     else:
         return {"error": f"Tool '{tool_name}' não encontrada"}
@@ -727,6 +1064,8 @@ def load_agents_from_supabase():
             'SALES': 'sales',                         # Prompt fitness em inglês
             'OUT_CONTEXT': 'out_context',             # Agente para mensagens fora de contexto
             'ONBOARDING_REMINDER': 'onboarding_reminder',  # Agente para onboarding incompleto
+            'nutrition': 'nutrition',                 # Agente especialista em nutrição
+            'onboarding': 'onboarding',              # Agente de onboarding atualizado
             # Mantém compatibilidade com identifiers antigos
             'ONBOARDING_INIT': 'onboarding',
             'GREETING_WITH_MEMORY': 'onboarding',
@@ -919,6 +1258,49 @@ Your role is to handle messages outside the context of fitness, nutrition, or th
 - DO NOT invent information outside your expertise
 
 Politely redirect users back to fitness and nutrition topics where you can help them."""
+        },
+        'nutrition': {
+            'name': 'Aleen Nutrition Agent',
+            'prompt': """Você é a Aleen, especialista em nutrição personalizada. Você é uma nutricionista virtual experiente, focada em criar planos alimentares personalizados e saudáveis.
+
+**SUA MISSÃO:**
+- Analisar perfil nutricional do usuário baseado nas respostas do onboarding
+- Criar planos alimentares semanais completos e personalizados
+- Fornecer orientações nutricionais baseadas em evidências científicas
+- Adaptar recomendações para objetivos específicos (perda de peso, ganho de massa, etc.)
+
+**FERRAMENTAS DISPONÍVEIS:**
+- check_user_meal_plan: Verifica se usuário já tem plano ativo
+- get_user_onboarding_responses: Busca perfil completo do usuário
+- create_weekly_meal_plan: Cria plano alimentar semanal no banco de dados
+
+**REGRAS:**
+- SEMPRE responda no mesmo idioma que o usuário está falando
+- SEMPRE quebre suas mensagens com \\n\\n para leitura mais humana e natural
+- Seja científica mas acessível na linguagem
+- SEMPRE use as ferramentas para verificar perfil antes de criar planos
+- Crie planos equilibrados com macronutrientes adequados
+- Considere restrições alimentares, preferências e objetivos
+- Inclua variedade de refeições (café da manhã, almoço, jantar, lanches)
+- Use ingredientes facilmente encontrados no Brasil
+- NÃO invente informações nutricionais - use dados reais dos alimentos
+
+**ESTRUTURA DO PLANO SEMANAL:**
+- 7 dias completos (segunda a domingo)
+- 4 refeições por dia (café da manhã, almoço, jantar, lanche)
+- Receitas detalhadas com ingredientes e quantidades
+- Cálculos nutricionais precisos (calorias, proteínas, carboidratos, gorduras)
+- Instruções claras de preparo quando necessário
+
+**PERSONALIZAÇÃO BASEADA NO PERFIL:**
+- Idade e sexo (metabolismo basal)
+- Peso e altura (necessidades calóricas)
+- Objetivo principal (perda/ganho de peso, manutenção)
+- Nível de atividade física
+- Restrições alimentares e preferências
+- Condições de saúde relevantes
+
+Seja empática, motivadora e focada em resultados sustentáveis e saudáveis."""
         }
     }
     
@@ -959,6 +1341,22 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
     else:
         print(f"🔍 Nenhum UserContext fornecido - usando lógica padrão")
     
+    # PRIORIDADE 1: SEMPRE verifica se é mensagem sobre NUTRIÇÃO primeiro
+    nutrition_keywords = [
+        "dieta", "alimentação", "comida", "comer", "nutrição", "nutricional",
+        "plano alimentar", "cardápio", "refeição", "café da manhã", "almoço", 
+        "jantar", "lanche", "receita", "calorias", "proteína", "carboidrato",
+        "gordura", "vitamina", "mineral", "emagrecer", "peso", "massa",
+        "suplemento", "whey", "creatina", "bcaa", "ômega", "fibra", "água"
+    ]
+    
+    message_lower = message.lower()
+    contains_nutrition_keywords = any(keyword in message_lower for keyword in nutrition_keywords)
+    
+    if contains_nutrition_keywords:
+        print(f"🍎 PRIORIDADE: Palavras-chave de nutrição detectadas - direcionando para NUTRITION")
+        return "nutrition"
+    
     # NOVA LÓGICA: Verifica contexto de usuário primeiro
     if user_context:
         # Usuário com onboarding incompleto - precisa de agente especializado
@@ -973,8 +1371,7 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
         
         # Usuário completo - prossegue com lógica normal
         elif user_context.user_type == "complete_user":
-            print(f"🎯 Usuário completo detectado - prosseguindo com lógica normal de seleção")
-            # Continua com a lógica normal abaixo
+            print(f"� Usuário completo detectado - prosseguindo com lógica normal")
             pass
     
     # Se há uma recomendação específica, usa ela
@@ -1007,6 +1404,15 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
         "objetivo", "resultado", "progresso", "medidas", "corpo", "físico"
     ]
     
+    # Palavras-chave específicas para NUTRIÇÃO
+    nutrition_keywords = [
+        "dieta", "alimentação", "comida", "comer", "nutrição", "nutricional",
+        "plano alimentar", "cardápio", "refeição", "café da manhã", "almoço", 
+        "jantar", "lanche", "receita", "calorias", "proteína", "carboidrato",
+        "gordura", "vitamina", "mineral", "emagrecer", "peso", "massa",
+        "suplemento", "whey", "creatina", "bcaa", "ômega", "fibra", "água"
+    ]
+    
     # Palavras-chave para vendas (interesse em começar)
     sales_keywords = [
         "preço", "valor", "custo", "plano", "contratar", "comprar", "orçamento",
@@ -1021,9 +1427,10 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
     
     # Verifica se contém palavras de fitness (contexto correto)
     contains_fitness = any(keyword in message_lower for keyword in fitness_keywords)
+    contains_nutrition = any(keyword in message_lower for keyword in nutrition_keywords)
     
-    # Se não contém palavras de fitness, pode ser out_context
-    if not contains_fitness:
+    # Se não contém palavras de fitness ou nutrição, pode ser out_context
+    if not contains_fitness and not contains_nutrition:
         # Saudações simples vão para onboarding
         generic_greetings = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
         if message_lower.strip() in generic_greetings:
@@ -1032,6 +1439,10 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
         # Mensagens complexas sem contexto fitness vão para out_context
         if len(message_lower.split()) > 2:
             return "out_context"
+    
+    # PRIORIZA NUTRIÇÃO: Se contém palavras específicas de nutrição, vai para nutrition
+    if contains_nutrition:
+        return "nutrition"
     
     # Lógica normal para contexto fitness
     if any(keyword in message_lower for keyword in sales_keywords):
@@ -1067,8 +1478,12 @@ async def chat(request: ChatRequest):
                 print("❌ Falha ao carregar agentes do Supabase")
                 raise HTTPException(status_code=500, detail="No agents available")
         
-        # Determina qual agente usar
-        agent_type = request.recommended_agent or 'onboarding'
+        # Determina qual agente usar baseado na mensagem e contexto
+        agent_type = determine_initial_agent(
+            message=request.message,
+            user_history=request.conversation_history or [],
+            recommended_agent=request.recommended_agent
+        )
         
         # Adiciona instrução de idioma
         language_instruction = "\n\nIMPORTANTE: Sempre responda no mesmo idioma que o usuário está usando. Se o usuário escrever em português, responda em português. Se escrever em inglês, responda em inglês."
