@@ -1874,10 +1874,13 @@ async def chat(request: ChatRequest):
 def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
     """Busca e cria o UserContext baseado no telefone do usuário"""
     try:
+        print(f"🔍 DEBUG - Buscando usuário por telefone: {phone_number}")
         # Busca usuário pelo telefone
-        user_result = supabase.table('users').select('id, onboarding, auth_user_id').eq('phone', phone_number).execute()
+        user_result = supabase.table('users').select('id, onboarding').eq('phone', phone_number).execute()
+        print(f"🔍 DEBUG - Resultado da busca: {user_result.data}")
         
         if not user_result.data:
+            print(f"🔍 DEBUG - Usuário não encontrado, retornando new_user")
             # Usuário não encontrado = new_user
             return UserContext(
                 user_type="new_user",
@@ -1891,12 +1894,13 @@ def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
         user_data = user_result.data[0]
         user_id = user_data['id']
         onboarding_completed = user_data.get('onboarding', False)
-        auth_user_id = user_data.get('auth_user_id')
+        print(f"🔍 DEBUG - User ID: {user_id}, Onboarding: {onboarding_completed}")
         
         if not onboarding_completed:
+            print(f"🔍 DEBUG - Onboarding incompleto, retornando incomplete_onboarding")
             # Tem registro mas onboarding incompleto
             # Busca URL de onboarding se existir
-            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{auth_user_id}" if auth_user_id else None
+            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_id}"
             
             return UserContext(
                 user_type="incomplete_onboarding",
@@ -1907,8 +1911,9 @@ def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
                 onboarding_url=onboarding_url
             )
         else:
+            print(f"🔍 DEBUG - Usuário completo, retornando complete_user")
             # Usuário completo
-            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{auth_user_id}" if auth_user_id else None
+            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_id}"
             
             return UserContext(
                 user_type="complete_user",
@@ -2339,13 +2344,27 @@ async def test_user_context(request: WhatsAppMessageRequest):
         else:
             print(f"   - Nenhum contexto fornecido")
         
+        # TESTE: Buscar contexto pelo telefone usando a função
+        print(f"🧪 TESTE - Buscando contexto pelo telefone: {request.phone_number}")
+        user_context_from_phone = get_user_context_by_phone(request.phone_number)
+        if user_context_from_phone:
+            print(f"   - Contexto encontrado: {user_context_from_phone.user_type}")
+            print(f"   - Tem conta: {user_context_from_phone.has_account}")
+            print(f"   - Onboarding completo: {user_context_from_phone.onboarding_completed}")
+            print(f"   - É usuário: {user_context_from_phone.is_user}")
+        else:
+            print(f"   - Nenhum contexto encontrado!")
+        
+        # Usa o contexto encontrado pela função (que é o que acontece no endpoint principal)
+        final_user_context = user_context_from_phone or request.user_context
+        
         # Testa seleção de agente
         user_memory = get_user_memory(request.phone_number)
         selected_agent = determine_initial_agent(
             message=request.message,
             user_history=user_memory,
             recommended_agent=request.recommended_agent,
-            user_context=request.user_context
+            user_context=final_user_context
         )
         
         # Simula resposta da IA
