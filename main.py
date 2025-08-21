@@ -1586,6 +1586,67 @@ async def chat(request: ChatRequest):
             # Se tudo falhar, retorna erro HTTP
             raise HTTPException(status_code=500, detail="Service temporarily unavailable")
 
+# Função para buscar contexto do usuário pelo telefone
+def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
+    """Busca e cria o UserContext baseado no telefone do usuário"""
+    try:
+        # Busca usuário pelo telefone
+        user_result = supabase.table('users').select('id, onboarding, auth_user_id').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            # Usuário não encontrado = new_user
+            return UserContext(
+                user_type="new_user",
+                has_account=False,
+                onboarding_completed=False,
+                is_lead=True,
+                is_user=False,
+                onboarding_url=None
+            )
+        
+        user_data = user_result.data[0]
+        user_id = user_data['id']
+        onboarding_completed = user_data.get('onboarding', False)
+        auth_user_id = user_data.get('auth_user_id')
+        
+        if not onboarding_completed:
+            # Tem registro mas onboarding incompleto
+            # Busca URL de onboarding se existir
+            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{auth_user_id}" if auth_user_id else None
+            
+            return UserContext(
+                user_type="incomplete_onboarding",
+                has_account=True,
+                onboarding_completed=False,
+                is_lead=True,
+                is_user=False,
+                onboarding_url=onboarding_url
+            )
+        else:
+            # Usuário completo
+            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{auth_user_id}" if auth_user_id else None
+            
+            return UserContext(
+                user_type="complete_user",
+                has_account=True,
+                onboarding_completed=True,
+                is_lead=False,
+                is_user=True,
+                onboarding_url=onboarding_url
+            )
+            
+    except Exception as e:
+        print(f"Erro ao buscar contexto do usuário {phone_number}: {e}")
+        # Em caso de erro, assume new_user
+        return UserContext(
+            user_type="new_user",
+            has_account=False,
+            onboarding_completed=False,
+            is_lead=True,
+            is_user=False,
+            onboarding_url=None
+        )
+
 @app.post("/whatsapp-chat", response_model=WhatsAppMessageResponse)
 async def whatsapp_chat(request: WhatsAppMessageRequest):
     """
@@ -1602,19 +1663,22 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         # Gera contexto da conversa incluindo memória
         conversation_context = get_conversation_context(request.phone_number, request.message)
         
+        # SEMPRE busca contexto do usuário pelo telefone
+        user_context = request.user_context or get_user_context_by_phone(request.phone_number)
+        
         print(f"🤖 Processando mensagem WhatsApp para usuário {request.user_name} ({request.phone_number})")
         print(f"💾 Memória encontrada: {len(user_memory)} mensagens anteriores")
         
         # Log detalhado do contexto do usuário
-        if request.user_context:
+        if user_context:
             print(f"👤 Contexto do usuário:")
-            print(f"   - Tipo: {request.user_context.user_type}")
-            print(f"   - Tem conta: {request.user_context.has_account}")
-            print(f"   - Onboarding completo: {request.user_context.onboarding_completed}")
-            print(f"   - É lead: {request.user_context.is_lead}")
-            print(f"   - É usuário: {request.user_context.is_user}")
-            if request.user_context.onboarding_url:
-                print(f"   - URL onboarding: {request.user_context.onboarding_url}")
+            print(f"   - Tipo: {user_context.user_type}")
+            print(f"   - Tem conta: {user_context.has_account}")
+            print(f"   - Onboarding completo: {user_context.onboarding_completed}")
+            print(f"   - É lead: {user_context.is_lead}")
+            print(f"   - É usuário: {user_context.is_user}")
+            if user_context.onboarding_url:
+                print(f"   - URL onboarding: {user_context.onboarding_url}")
         else:
             print(f"👤 Nenhum contexto de usuário fornecido")
         
@@ -1623,7 +1687,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
             message=request.message,
             user_history=user_memory,
             recommended_agent=request.recommended_agent,
-            user_context=request.user_context
+            user_context=user_context
         )
         
         if initial_agent not in agents_cache:
@@ -1716,17 +1780,17 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 print(f"🔍 DEBUG: Tipo: {type(ai_response)}, Tamanho: {len(ai_response) if ai_response else 'None'}")
             
             # NOVA LÓGICA: Adicionar link de onboarding se necessário
-            if request.user_context and request.user_context.user_type == "incomplete_onboarding":
-                if request.user_context.onboarding_url:
+            if user_context and user_context.user_type == "incomplete_onboarding":
+                if user_context.onboarding_url:
                     # Adiciona o link de onboarding à resposta
                     original_response_length = len(ai_response)
-                    ai_response += f"\\n\\n🔗 Finalize seu cadastro aqui: {request.user_context.onboarding_url}"
+                    ai_response += f"\\n\\n🔗 Finalize seu cadastro aqui: {user_context.onboarding_url}"
                     print(f"✅ Link de onboarding adicionado à resposta")
-                    print(f"   - URL: {request.user_context.onboarding_url}")
+                    print(f"   - URL: {user_context.onboarding_url}")
                     print(f"   - Resposta expandida de {original_response_length} para {len(ai_response)} caracteres")
                 else:
                     print(f"⚠️ Usuário com onboarding incompleto, mas sem URL de onboarding fornecida")
-            elif request.user_context and request.user_context.user_type == "incomplete_onboarding":
+            elif user_context and user_context.user_type == "incomplete_onboarding":
                 print(f"⚠️ Usuário com onboarding incompleto, mas sem URL de onboarding fornecida")
             
         except Exception as e:
@@ -1749,15 +1813,15 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 raise HTTPException(status_code=500, detail="AI service temporarily unavailable")
         
         # 🔗 LÓGICA DE INCLUSÃO AUTOMÁTICA DE LINKS
-        if request.user_context and request.user_context.user_type == "incomplete_onboarding":
+        if user_context and user_context.user_type == "incomplete_onboarding":
             # Gera URL de onboarding se não fornecida
-            if not request.user_context.onboarding_url and request.user_context:
+            if not user_context.onboarding_url and user_context:
                 # Usa user_id se disponível, senão usa phone_number
-                user_identifier = getattr(request.user_context, 'user_id', None) or request.phone_number.replace('+', '')
+                user_identifier = getattr(user_context, 'user_id', None) or request.phone_number.replace('+', '')
                 onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_identifier}"
                 print(f"🔗 URL de onboarding gerada automaticamente: {onboarding_url}")
             else:
-                onboarding_url = request.user_context.onboarding_url
+                onboarding_url = user_context.onboarding_url
             
             # Adiciona o link à resposta se não já contiver
             if onboarding_url and "🔗" not in ai_response and "http" not in ai_response:
