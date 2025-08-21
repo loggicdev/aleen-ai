@@ -847,12 +847,24 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             phone=phone
         )
     elif tool_name == "check_user_meal_plan":
-        return check_user_meal_plan(arguments.get('phone_number'))
+        # Usa telefone do contexto se não fornecido nos argumentos
+        phone_number = arguments.get('phone_number') or context_phone
+        if not phone_number:
+            return {"error": "Telefone não disponível no contexto ou argumentos"}
+        return check_user_meal_plan(phone_number)
     elif tool_name == "get_user_onboarding_responses":
-        return get_user_onboarding_responses(arguments.get('phone_number'))
+        # Usa telefone do contexto se não fornecido nos argumentos
+        phone_number = arguments.get('phone_number') or context_phone
+        if not phone_number:
+            return {"error": "Telefone não disponível no contexto ou argumentos"}
+        return get_user_onboarding_responses(phone_number)
     elif tool_name == "create_weekly_meal_plan":
+        # Usa telefone do contexto se não fornecido nos argumentos
+        phone_number = arguments.get('phone_number') or context_phone
+        if not phone_number:
+            return {"error": "Telefone não disponível no contexto ou argumentos"}
         return create_weekly_meal_plan(
-            phone_number=arguments.get('phone_number'),
+            phone_number=phone_number,
             plan_name=arguments.get('plan_name'),
             weekly_meals=arguments.get('weekly_meals')
         )
