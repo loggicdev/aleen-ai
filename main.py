@@ -2009,6 +2009,10 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         
         # Executa com OpenAI (com tools disponíveis)
         try:
+            # Debug: mostrar ferramentas disponíveis para este agente
+            tool_names = [tool["function"]["name"] for tool in AVAILABLE_TOOLS]
+            print(f"🔧 DEBUG - Ferramentas disponíveis para IA: {tool_names}")
+            
             # Primeira chamada com tools disponíveis
             response = openai_client.chat.completions.create(
                 model="gpt-4o-mini",
