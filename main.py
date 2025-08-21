@@ -1331,128 +1331,91 @@ def support_agent():
 agents = agents_cache
 
 def determine_initial_agent(message: str, user_history: List[str], recommended_agent: Optional[str] = None, user_context: Optional[UserContext] = None) -> str:
-    """Determina qual agente deve atender baseado na mensagem, histórico e contexto do usuário"""
+    """Determina qual agente deve atender baseado PRIMEIRO na situação do usuário no banco de dados"""
     
-    # Log do contexto de usuário para debugging
+    # PRIORIDADE 1: Se há contexto de usuário, usa ele primeiro
     if user_context:
         print(f"🔍 UserContext detectado - Tipo: {user_context.user_type}, Account: {user_context.has_account}, Onboarding: {user_context.onboarding_completed}")
-        if user_context.onboarding_url:
-            print(f"🔗 URL de onboarding disponível: {user_context.onboarding_url}")
-    else:
-        print(f"🔍 Nenhum UserContext fornecido - usando lógica padrão")
-    
-    # PRIORIDADE 1: SEMPRE verifica se é mensagem sobre NUTRIÇÃO primeiro
-    nutrition_keywords = [
-        "dieta", "alimentação", "comida", "comer", "nutrição", "nutricional",
-        "plano alimentar", "cardápio", "refeição", "café da manhã", "almoço", 
-        "jantar", "lanche", "receita", "calorias", "proteína", "carboidrato",
-        "gordura", "vitamina", "mineral", "emagrecer", "peso", "massa",
-        "suplemento", "whey", "creatina", "bcaa", "ômega", "fibra", "água"
-    ]
-    
-    message_lower = message.lower()
-    contains_nutrition_keywords = any(keyword in message_lower for keyword in nutrition_keywords)
-    
-    if contains_nutrition_keywords:
-        print(f"🍎 PRIORIDADE: Palavras-chave de nutrição detectadas - direcionando para NUTRITION")
-        return "nutrition"
-    
-    # NOVA LÓGICA: Verifica contexto de usuário primeiro
-    if user_context:
-        # Usuário com onboarding incompleto - precisa de agente especializado
+        
+        # Usuário com onboarding incompleto - precisa completar
         if user_context.user_type == "incomplete_onboarding":
-            print(f"🎯 Agente selecionado por contexto: onboarding_reminder (usuário com onboarding incompleto)")
+            print(f"🎯 DECISÃO POR DADOS: onboarding_reminder (usuário com onboarding incompleto)")
             return "onboarding_reminder"
         
-        # Usuário novo - processo normal de onboarding
+        # Usuário novo - processo normal de onboarding  
         elif user_context.user_type == "new_user":
-            print(f"🎯 Agente selecionado por contexto: onboarding (usuário novo)")
+            print(f"🎯 DECISÃO POR DADOS: onboarding (usuário novo)")
             return "onboarding"
         
-        # Usuário completo - prossegue com lógica normal
+        # USUÁRIO COMPLETO: Prioridade para verificar nutrição
         elif user_context.user_type == "complete_user":
-            print(f"� Usuário completo detectado - prosseguindo com lógica normal")
-            pass
+            print(f"✅ USUÁRIO COMPLETO - direcionando para NUTRITION para verificar plano alimentar")
+            return "nutrition"
     
-    # Se há uma recomendação específica, usa ela
+    # PRIORIDADE 2: Se não tem contexto, verifica recomendação específica
     if recommended_agent and recommended_agent in agents_cache:
+        print(f"🎯 DECISÃO POR RECOMENDAÇÃO: {recommended_agent}")
         return recommended_agent
+    
+    # PRIORIDADE 3: FALLBACK - análise de palavras-chave apenas se não há dados do usuário
+    print(f"🔍 Nenhum contexto de usuário - usando análise de palavras-chave como fallback")
+    
+    message_lower = message.lower()
     
     # Palavras-chave claramente fora de contexto (não relacionadas a fitness)
     out_context_keywords = [
         "tempo", "weather", "clima", "política", "notícia", "futebol", "filme",
-        "música", "receita", "cozinhar", "viagem", "trabalho", "estudo", "escola",
-        "matemática", "história", "geografia", "programação", "tecnologia", "carros",
+        "música", "viagem", "trabalho", "estudo", "escola", "matemática", 
+        "história", "geografia", "programação", "tecnologia", "carros",
         "games", "jogos", "amor", "relacionamento", "piada", "joke", "previsão"
     ]
     
-    message_lower = message.lower()
-    
-    # PRIMEIRA VERIFICAÇÃO: Se é claramente fora de contexto
+    # Se é claramente fora de contexto
     if any(keyword in message_lower for keyword in out_context_keywords):
+        print(f"🚫 DECISÃO POR PALAVRA-CHAVE: out_context")
         return "out_context"
-    
-    # Se é primeira interação E não é fora de contexto, vai para onboarding
-    if not user_history:
-        return "onboarding"
-    
-    # Palavras-chave para contexto FITNESS/NUTRIÇÃO
-    fitness_keywords = [
-        "treino", "exercício", "workout", "musculação", "cardio", "peso", "academia", 
-        "fitness", "saúde", "emagrecer", "massa", "dieta", "nutrição", "calorias",
-        "alimentação", "proteína", "carboidrato", "suplemento", "plano", "meta",
-        "objetivo", "resultado", "progresso", "medidas", "corpo", "físico"
-    ]
     
     # Palavras-chave específicas para NUTRIÇÃO
     nutrition_keywords = [
         "dieta", "alimentação", "comida", "comer", "nutrição", "nutricional",
         "plano alimentar", "cardápio", "refeição", "café da manhã", "almoço", 
         "jantar", "lanche", "receita", "calorias", "proteína", "carboidrato",
-        "gordura", "vitamina", "mineral", "emagrecer", "peso", "massa",
-        "suplemento", "whey", "creatina", "bcaa", "ômega", "fibra", "água"
+        "gordura", "vitamina", "mineral", "suplemento", "whey", "creatina", 
+        "bcaa", "ômega", "fibra", "água"
     ]
     
-    # Palavras-chave para vendas (interesse em começar)
+    if any(keyword in message_lower for keyword in nutrition_keywords):
+        print(f"🍎 DECISÃO POR PALAVRA-CHAVE: nutrition")
+        return "nutrition"
+    
+    # Palavras-chave para vendas
     sales_keywords = [
         "preço", "valor", "custo", "plano", "contratar", "comprar", "orçamento",
         "quero começar", "interessado", "teste", "gratis", "trial", "assinar"
     ]
     
-    # Palavras-chave para suporte (dúvidas sobre funcionamento)
+    if any(keyword in message_lower for keyword in sales_keywords):
+        print(f"💰 DECISÃO POR PALAVRA-CHAVE: sales")
+        return "sales"
+    
+    # Palavras-chave para suporte
     support_keywords = [
         "como funciona", "como usar", "dúvida", "pergunta", "ajuda", "problema",
         "não entendi", "explicar", "dashboard", "acompanhar", "progresso"
     ]
     
-    # Verifica se contém palavras de fitness (contexto correto)
-    contains_fitness = any(keyword in message_lower for keyword in fitness_keywords)
-    contains_nutrition = any(keyword in message_lower for keyword in nutrition_keywords)
-    
-    # Se não contém palavras de fitness ou nutrição, pode ser out_context
-    if not contains_fitness and not contains_nutrition:
-        # Saudações simples vão para onboarding
-        generic_greetings = ["oi", "olá", "hello", "hi", "bom dia", "boa tarde", "boa noite"]
-        if message_lower.strip() in generic_greetings:
-            return "onboarding"
-        
-        # Mensagens complexas sem contexto fitness vão para out_context
-        if len(message_lower.split()) > 2:
-            return "out_context"
-    
-    # PRIORIZA NUTRIÇÃO: Se contém palavras específicas de nutrição, vai para nutrition
-    if contains_nutrition:
-        return "nutrition"
-    
-    # Lógica normal para contexto fitness
-    if any(keyword in message_lower for keyword in sales_keywords):
-        return "sales"
-    elif any(keyword in message_lower for keyword in support_keywords):
+    if any(keyword in message_lower for keyword in support_keywords):
+        print(f"🆘 DECISÃO POR PALAVRA-CHAVE: support")
         return "support"
-    else:
-        # Default para onboarding se dentro do contexto fitness
+    
+    # Se é primeira interação, vai para onboarding
+    if not user_history:
+        print(f"🆕 DECISÃO POR HISTÓRICO: onboarding (primeira interação)")
         return "onboarding"
-
+    
+    # Default: onboarding
+    print(f"🔄 DECISÃO PADRÃO: onboarding")
+    return "onboarding"
 class ChatRequest(BaseModel):
     user_id: str
     user_name: str
