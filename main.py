@@ -499,16 +499,11 @@ AVAILABLE_TOOLS = [
         "type": "function",
         "function": {
             "name": "check_user_meal_plan",
-            "description": "Verifica se o usuário já possui um plano alimentar ativo. Use sempre antes de criar um novo plano.",
+            "description": "Verifica se o usuário atual já possui um plano alimentar ativo. Use sempre antes de criar um novo plano.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "phone_number": {
-                        "type": "string",
-                        "description": "Número de telefone do usuário"
-                    }
-                },
-                "required": ["phone_number"]
+                "properties": {},
+                "required": []
             }
         }
     },
@@ -516,16 +511,11 @@ AVAILABLE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_user_onboarding_responses",
-            "description": "Busca todas as respostas do onboarding do usuário para analisar perfil e necessidades nutricionais.",
+            "description": "Busca todas as respostas do onboarding do usuário atual para analisar perfil e necessidades nutricionais.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "phone_number": {
-                        "type": "string",
-                        "description": "Número de telefone do usuário"
-                    }
-                },
-                "required": ["phone_number"]
+                "properties": {},
+                "required": []
             }
         }
     },
@@ -533,14 +523,10 @@ AVAILABLE_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_weekly_meal_plan",
-            "description": "Cria um plano alimentar semanal completo para o usuário baseado no seu perfil de onboarding.",
+            "description": "Cria um plano alimentar semanal completo para o usuário atual baseado no seu perfil de onboarding.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "phone_number": {
-                        "type": "string",
-                        "description": "Número de telefone do usuário"
-                    },
                     "plan_name": {
                         "type": "string",
                         "description": "Nome do plano alimentar"
@@ -601,7 +587,7 @@ AVAILABLE_TOOLS = [
                         }
                     }
                 },
-                "required": ["phone_number", "plan_name", "weekly_meals"]
+                "required": ["plan_name", "weekly_meals"]
             }
         }
     }
@@ -847,24 +833,18 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             phone=phone
         )
     elif tool_name == "check_user_meal_plan":
-        # Usa telefone do contexto se não fornecido nos argumentos
-        phone_number = arguments.get('phone_number') or context_phone
-        if not phone_number:
-            return {"error": "Telefone não disponível no contexto ou argumentos"}
-        return check_user_meal_plan(phone_number)
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return check_user_meal_plan(context_phone)
     elif tool_name == "get_user_onboarding_responses":
-        # Usa telefone do contexto se não fornecido nos argumentos
-        phone_number = arguments.get('phone_number') or context_phone
-        if not phone_number:
-            return {"error": "Telefone não disponível no contexto ou argumentos"}
-        return get_user_onboarding_responses(phone_number)
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_user_onboarding_responses(context_phone)
     elif tool_name == "create_weekly_meal_plan":
-        # Usa telefone do contexto se não fornecido nos argumentos
-        phone_number = arguments.get('phone_number') or context_phone
-        if not phone_number:
-            return {"error": "Telefone não disponível no contexto ou argumentos"}
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
         return create_weekly_meal_plan(
-            phone_number=phone_number,
+            phone_number=context_phone,
             plan_name=arguments.get('plan_name'),
             weekly_meals=arguments.get('weekly_meals')
         )
