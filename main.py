@@ -2084,12 +2084,58 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     start_date = datetime.now().date().isoformat()
                     end_date = (datetime.now().date() + timedelta(days=7)).isoformat()
                     
+                    # Plano semanal básico com receitas existentes no banco
+                    basic_weekly_plan = {
+                        "segunda-feira": [
+                            {"mealType": "Café da Manhã", "recipeName": "Omelete de Claras com Espinafre", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Frango Grelhado com Batata Doce", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Iogurte com Granola e Frutas", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Peixe Assado com Legumes", "order": 1}
+                        ],
+                        "terça-feira": [
+                            {"mealType": "Café da Manhã", "recipeName": "Vitamina Verde Detox", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Salmão com Brócolis", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Mix de Castanhas", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Quinoa com Legumes Refogados", "order": 1}
+                        ],
+                        "quarta-feira": [
+                            {"mealType": "Café da Manhã", "recipeName": "Panqueca de Aveia", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Filé de Tilápia com Purê de Batata Doce", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Smoothie de Banana", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Salada de Quinoa com Salmão", "order": 1}
+                        ],
+                        "quinta-feira": [
+                            {"mealType": "Café da Manhã", "recipeName": "Ovos Mexidos com Abacate", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Carne Moída com Abobrinha", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Iogurte Proteico", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Sopa de Lentilha", "order": 1}
+                        ],
+                        "sexta-feira": [
+                            {"mealType": "Café da Manhã", "recipeName": "Tapioca com Frango Desfiado", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Wrap de Frango com Salada", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Pasta de Amendoim com Banana", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Peixe Assado com Legumes", "order": 1}
+                        ],
+                        "sábado": [
+                            {"mealType": "Café da Manhã", "recipeName": "Panqueca de Aveia", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Salada de Atum com Grão de Bico", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Mix de Castanhas", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Frango Grelhado com Batata Doce", "order": 1}
+                        ],
+                        "domingo": [
+                            {"mealType": "Café da Manhã", "recipeName": "Vitamina Verde Detox", "order": 1},
+                            {"mealType": "Almoço", "recipeName": "Salmão com Brócolis", "order": 1},
+                            {"mealType": "Lanche da Tarde", "recipeName": "Smoothie de Banana", "order": 1},
+                            {"mealType": "Jantar", "recipeName": "Quinoa com Legumes Refogados", "order": 1}
+                        ]
+                    }
+                    
                     fallback_args = {
                         'plan_name': 'Plano Personalizado Aleen',
                         'weekly_meals': {
-                            'startDate': start_date,    # Data atual
-                            'endDate': end_date,        # +7 dias
-                            'weeklyPlan': {}            # Plano vazio, só cria registro principal
+                            'startDate': start_date,
+                            'endDate': end_date,
+                            'weeklyPlan': basic_weekly_plan
                         }
                     }
                     fallback_tool_result = execute_tool("create_weekly_meal_plan", fallback_args, request.phone_number)
