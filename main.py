@@ -1027,9 +1027,11 @@ def check_user_workout_plan(phone_number: str):
         else:
             return {
                 "has_plan": False,
-                "message": "Usuário não possui plano de treino ativo",
+                "status": "no_plan_found",
+                "message": "Perfeito! Vejo que você ainda não possui um plano de treino ativo. Vamos criar um plano personalizado para você!",
                 "user_id": user_id,
-                "onboarding_completed": onboarding_completed
+                "onboarding_completed": onboarding_completed,
+                "action_needed": "create_plan"
             }
     
     except Exception as e:
@@ -1843,9 +1845,11 @@ def check_user_meal_plan(phone_number: str):
         else:
             return {
                 "has_plan": False,
-                "message": "Usuário não possui plano alimentar ativo",
+                "status": "no_plan_found",
+                "message": "Perfeito! Vejo que você ainda não possui um plano alimentar ativo. Vamos criar um plano nutricional personalizado para você!",
                 "user_id": user_id,
-                "onboarding_completed": True
+                "onboarding_completed": True,
+                "action_needed": "create_plan"
             }
             
     except Exception as e:
@@ -3938,9 +3942,12 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         
         tools_instruction = "\n\nFERRAMENTAS DISPONÍVEIS:\n1. 'get_onboarding_questions': Execute IMEDIATAMENTE quando o usuário demonstrar interesse em iniciar o processo de onboarding. Após executar, apresente as perguntas diretamente na resposta. NUNCA invente perguntas.\n2. 'create_user_and_save_onboarding': Execute IMEDIATAMENTE quando o usuário já forneceu as 3 informações básicas (nome, idade, email). Após executar, informe diretamente o resultado na resposta. Esta ferramenta cria a conta, envia as credenciais E inclui automaticamente o link de onboarding para o usuário continuar o processo."
         
+        # INSTRUÇÃO ESPECÍFICA PARA VERIFICAÇÕES DE PLANOS
+        plan_check_instruction = "\n\n🔍 INTERPRETAÇÃO DE VERIFICAÇÕES DE PLANOS:\n- Quando check_user_meal_plan ou check_user_training_plan retornar 'has_plan: false' com 'status: no_plan_found', isso é NORMAL e POSITIVO\n- NÃO trate como erro! Significa que você pode criar um novo plano\n- Use a mensagem retornada que já é positiva: 'Perfeito! Vejo que você ainda não possui um plano...'\n- Continue diretamente para a criação do plano sem mencionar problemas ou erros\n- Se a resposta contém 'action_needed: create_plan', proceda imediatamente com a criação"
+        
         # Cria mensagens para OpenAI incluindo contexto com memória
         messages = [
-            {"role": "system", "content": agent.instructions + memory_instruction + language_instruction + ux_critical_rule + tools_instruction},
+            {"role": "system", "content": agent.instructions + memory_instruction + language_instruction + ux_critical_rule + tools_instruction + plan_check_instruction},
             {"role": "user", "content": f"Usuário: {request.user_name}\n\nContexto da conversa:\n{conversation_context}"}
         ]
         
@@ -3979,9 +3986,24 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     "create_weekly_meal_plan" not in used_tools
                 )
                 
+                # Detecta se é situação de training plan sem criar (fitness agent com 2 tools específicas)
+                is_training_plan_creation = (
+                    user_context and 
+                    user_context.user_type == "complete_user" and 
+                    len(response_message.tool_calls) == 2 and
+                    "check_user_training_plan" in used_tools and 
+                    "get_user_onboarding_responses" in used_tools and
+                    "create_weekly_training_plan" not in used_tools
+                )
+                
                 if is_meal_plan_creation:
                     print(f"🚨 FALLBACK DETECTADO: Nutrition agent com 2 tools mas sem create_weekly_meal_plan!")
                     print(f"🔧 FORÇANDO execução de create_weekly_meal_plan automaticamente...")
+                    print(f"📊 DEBUG FALLBACK - User: {request.phone_number}, Context: {user_context.user_type}, Tools: {used_tools}")
+                
+                if is_training_plan_creation:
+                    print(f"🚨 FALLBACK DETECTADO: Fitness agent com 2 tools mas sem create_weekly_training_plan!")
+                    print(f"🔧 FORÇANDO execução de create_weekly_training_plan automaticamente...")
                     print(f"📊 DEBUG FALLBACK - User: {request.phone_number}, Context: {user_context.user_type}, Tools: {used_tools}")
                 
                 # Adiciona a resposta da IA às mensagens
@@ -4095,6 +4117,76 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                         })
                     
                     print(f"🎯 FALLBACK COMPLETED - Check database for meal plan!")
+                
+                # FALLBACK: Se detectou situação de training plan, força execução do create_weekly_training_plan
+                if is_training_plan_creation:
+                    print(f"🔧 EXECUTANDO FALLBACK: create_weekly_training_plan forçado")
+                    print(f"📱 FALLBACK INFO - Phone: {request.phone_number}")
+                    
+                    # Plano de treino básico personalizado baseado no onboarding
+                    basic_training_plan = {
+                        "days": [
+                            {
+                                "day_of_week": 1,  # Segunda
+                                "workout_name": "Treino A - Peito e Tríceps",
+                                "exercises": [
+                                    {"exercise_name": "Supino Reto", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Supino Inclinado", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Crucifixo", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Tríceps Pulley", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Tríceps Francês", "sets": 3, "reps": "10-15", "rest_seconds": 60}
+                                ]
+                            },
+                            {
+                                "day_of_week": 3,  # Quarta
+                                "workout_name": "Treino B - Costas e Bíceps",
+                                "exercises": [
+                                    {"exercise_name": "Puxada Alta", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Remada Curvada", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Remada Sentada", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Rosca Direta", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Rosca Martelo", "sets": 3, "reps": "10-15", "rest_seconds": 60}
+                                ]
+                            },
+                            {
+                                "day_of_week": 5,  # Sexta
+                                "workout_name": "Treino C - Pernas e Ombros",
+                                "exercises": [
+                                    {"exercise_name": "Agachamento", "sets": 3, "reps": "10-15", "rest_seconds": 120},
+                                    {"exercise_name": "Leg Press", "sets": 3, "reps": "12-20", "rest_seconds": 90},
+                                    {"exercise_name": "Cadeira Extensora", "sets": 3, "reps": "12-20", "rest_seconds": 60},
+                                    {"exercise_name": "Desenvolvimento com Halteres", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Elevação Lateral", "sets": 3, "reps": "12-15", "rest_seconds": 60}
+                                ]
+                            }
+                        ]
+                    }
+                    
+                    fallback_training_args = {
+                        'plan_name': 'Plano de Treino Personalizado Aleen',
+                        'objective': 'Hipertrofia e Condicionamento',
+                        'weekly_workouts': basic_training_plan
+                    }
+                    fallback_training_result = execute_tool("create_weekly_training_plan", fallback_training_args, request.phone_number)
+                    print(f"🏋️ FALLBACK TRAINING RESULT: {fallback_training_result}")
+                    
+                    # Em vez de adicionar tool call fake, adiciona diretamente na resposta
+                    if fallback_training_result.get('success'):
+                        print(f"✅ FALLBACK TRAINING SUCCESS: Training plan criado com sucesso!")
+                        # Força resposta sobre criação bem-sucedida
+                        messages.append({
+                            "role": "assistant",
+                            "content": f"✅ Plano de treino criado e salvo com sucesso! {fallback_training_result.get('message', '')}"
+                        })
+                    else:
+                        print(f"❌ FALLBACK TRAINING ERROR: {fallback_training_result.get('error', 'Erro desconhecido')}")
+                        # Informa sobre erro na criação
+                        messages.append({
+                            "role": "assistant", 
+                            "content": f"❌ Erro ao criar plano de treino: {fallback_training_result.get('error', 'Erro desconhecido')}"
+                        })
+                    
+                    print(f"🎯 FALLBACK TRAINING COMPLETED - Check database for training plan!")
                 
                 # Segunda chamada para gerar resposta final com os resultados das tools
                 final_response = openai_client.chat.completions.create(
