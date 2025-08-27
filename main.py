@@ -612,6 +612,91 @@ AVAILABLE_TOOLS = [
                 "required": ["plan_data"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_current_meal",
+            "description": "Obtém a próxima refeição do usuário baseada no horário atual e no plano alimentar ativo.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function", 
+        "function": {
+            "name": "get_user_meal_plan_details",
+            "description": "Obtém todos os detalhes do plano alimentar ativo do usuário, incluindo todas as refeições da semana.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today_meals", 
+            "description": "Obtém todas as refeições do dia atual do usuário baseado no plano alimentar ativo.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_alternative_recipes",
+            "description": "Sugere receitas alternativas por categoria (café da manhã, almoço, lanche, jantar) baseado nas receitas disponíveis.",
+            "parameters": {
+                "type": "object", 
+                "properties": {
+                    "meal_type": {
+                        "type": "string",
+                        "description": "Tipo de refeição para filtrar sugestões",
+                        "enum": ["Café da Manhã", "Almoço", "Lanche da Tarde", "Jantar"]
+                    },
+                    "exclude_recipe": {
+                        "type": "string",
+                        "description": "Nome da receita a ser excluída das sugestões (opcional)"
+                    }
+                },
+                "required": ["meal_type"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_meal_in_plan",
+            "description": "Atualiza uma refeição específica no plano alimentar do usuário, trocando por uma receita diferente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "day_of_week": {
+                        "type": "string",
+                        "description": "Dia da semana da refeição a ser alterada",
+                        "enum": ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+                    },
+                    "meal_type": {
+                        "type": "string", 
+                        "description": "Tipo de refeição a ser alterada",
+                        "enum": ["Café da Manhã", "Almoço", "Lanche da Tarde", "Jantar"]
+                    },
+                    "new_recipe_name": {
+                        "type": "string",
+                        "description": "Nome da nova receita para substituir a atual"
+                    }
+                },
+                "required": ["day_of_week", "meal_type", "new_recipe_name"]
+            }
+        }
     }
 ]
 
@@ -1087,6 +1172,279 @@ def register_complete_meal_plan(phone_number: str, plan_data: dict):
         }
 
 
+# Novas funções para consulta e edição de planos alimentares
+def get_user_current_meal(phone_number: str):
+    """Obtém a próxima refeição do usuário baseada no horário atual"""
+    try:
+        from datetime import datetime
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_meal_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
+        if not plan_result.data:
+            return {"error": "Nenhum plano alimentar ativo encontrado"}
+        
+        plan_id = plan_result.data[0]['id']
+        
+        # Determina dia da semana e refeição atual
+        current_time = datetime.now()
+        days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
+        current_day = days_pt[current_time.weekday()]
+        
+        # Determina refeição baseada no horário
+        hour = current_time.hour
+        if hour < 10:
+            meal_type = "Café da Manhã"
+        elif hour < 14:
+            meal_type = "Almoço"
+        elif hour < 18:
+            meal_type = "Lanche da Tarde"
+        else:
+            meal_type = "Jantar"
+        
+        # Busca refeição específica
+        meal_result = supabase.table('plan_meals').select('''
+            id, day_of_week, meal_type, display_order,
+            recipes (name, description)
+        ''').eq('user_meal_plan_id', plan_id).eq('day_of_week', current_day).eq('meal_type', meal_type).execute()
+        
+        if not meal_result.data:
+            return {
+                "message": f"Nenhuma refeição encontrada para {meal_type} de {current_day}",
+                "current_day": current_day,
+                "current_meal_type": meal_type
+            }
+        
+        return {
+            "success": True,
+            "current_meal": meal_result.data[0],
+            "current_day": current_day,
+            "current_meal_type": meal_type,
+            "current_time": current_time.strftime("%H:%M")
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar refeição atual: {str(e)}"}
+
+
+def get_user_meal_plan_details(phone_number: str):
+    """Obtém todos os detalhes do plano alimentar ativo do usuário"""
+    try:
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo com todas as refeições
+        plan_result = supabase.table('user_meal_plans').select('''
+            id, name, start_date, end_date, created_at,
+            plan_meals (
+                id, day_of_week, meal_type, display_order,
+                recipes (name, description)
+            )
+        ''').eq('user_id', user_id).eq('is_active', True).execute()
+        
+        if not plan_result.data:
+            return {"error": "Nenhum plano alimentar ativo encontrado"}
+        
+        plan = plan_result.data[0]
+        
+        # Organiza refeições por dia da semana
+        meals_by_day = {}
+        for meal in plan['plan_meals']:
+            day = meal['day_of_week']
+            if day not in meals_by_day:
+                meals_by_day[day] = []
+            meals_by_day[day].append({
+                "meal_type": meal['meal_type'],
+                "recipe_name": meal['recipes']['name'],
+                "recipe_description": meal['recipes'].get('description', ''),
+                "order": meal['display_order']
+            })
+        
+        # Ordena refeições por ordem de exibição
+        for day in meals_by_day:
+            meals_by_day[day].sort(key=lambda x: x['order'])
+        
+        return {
+            "success": True,
+            "plan_name": plan['name'],
+            "start_date": plan['start_date'],
+            "end_date": plan['end_date'],
+            "created_at": plan['created_at'],
+            "meals_by_day": meals_by_day,
+            "total_meals": len(plan['plan_meals'])
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar detalhes do plano: {str(e)}"}
+
+
+def get_today_meals(phone_number: str):
+    """Obtém todas as refeições do dia atual do usuário"""
+    try:
+        from datetime import datetime
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_meal_plans').select('id, name').eq('user_id', user_id).eq('is_active', True).execute()
+        if not plan_result.data:
+            return {"error": "Nenhum plano alimentar ativo encontrado"}
+        
+        plan_id = plan_result.data[0]['id']
+        plan_name = plan_result.data[0]['name']
+        
+        # Determina dia atual
+        current_time = datetime.now()
+        days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
+        today = days_pt[current_time.weekday()]
+        
+        # Busca todas as refeições do dia
+        meals_result = supabase.table('plan_meals').select('''
+            id, meal_type, display_order,
+            recipes (name, description)
+        ''').eq('user_meal_plan_id', plan_id).eq('day_of_week', today).order('display_order').execute()
+        
+        if not meals_result.data:
+            return {
+                "message": f"Nenhuma refeição encontrada para hoje ({today})",
+                "today": today
+            }
+        
+        meals = []
+        for meal in meals_result.data:
+            meals.append({
+                "meal_type": meal['meal_type'],
+                "recipe_name": meal['recipes']['name'],
+                "recipe_description": meal['recipes'].get('description', ''),
+                "order": meal['display_order']
+            })
+        
+        return {
+            "success": True,
+            "plan_name": plan_name,
+            "today": today,
+            "date": current_time.strftime("%Y-%m-%d"),
+            "meals": meals,
+            "total_meals": len(meals)
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar refeições de hoje: {str(e)}"}
+
+
+def suggest_alternative_recipes(meal_type: str, exclude_recipe: str = None):
+    """Sugere receitas alternativas por categoria"""
+    try:
+        # Busca todas as receitas disponíveis
+        query = supabase.table('recipes').select('name, description, category')
+        
+        # Exclui receita específica se fornecida
+        if exclude_recipe:
+            query = query.neq('name', exclude_recipe)
+        
+        recipes_result = query.execute()
+        
+        if not recipes_result.data:
+            return {"error": "Nenhuma receita encontrada"}
+        
+        # Filtra por categoria/tipo de refeição (pode expandir a lógica aqui)
+        suitable_recipes = []
+        for recipe in recipes_result.data:
+            # Lógica simples: todas as receitas são adequadas para qualquer refeição
+            # Pode ser refinada baseado na categoria ou ingredientes
+            suitable_recipes.append({
+                "name": recipe['name'],
+                "description": recipe.get('description', ''),
+                "category": recipe.get('category', 'Não categorizada')
+            })
+        
+        # Limita a 8 sugestões para não sobrecarregar
+        limited_suggestions = suitable_recipes[:8]
+        
+        return {
+            "success": True,
+            "meal_type": meal_type,
+            "excluded_recipe": exclude_recipe,
+            "suggestions": limited_suggestions,
+            "total_suggestions": len(limited_suggestions)
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar sugestões: {str(e)}"}
+
+
+def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new_recipe_name: str):
+    """Atualiza uma refeição específica no plano alimentar do usuário"""
+    try:
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_meal_plans').select('id, name').eq('user_id', user_id).eq('is_active', True).execute()
+        if not plan_result.data:
+            return {"error": "Nenhum plano alimentar ativo encontrado"}
+        
+        plan_id = plan_result.data[0]['id']
+        plan_name = plan_result.data[0]['name']
+        
+        # Verifica se a nova receita existe
+        recipe_result = supabase.table('recipes').select('id, name').eq('name', new_recipe_name).execute()
+        if not recipe_result.data:
+            return {"error": f"Receita '{new_recipe_name}' não encontrada no banco de dados"}
+        
+        new_recipe_id = recipe_result.data[0]['id']
+        
+        # Busca a refeição existente para atualizar
+        meal_result = supabase.table('plan_meals').select('id, recipes(name)').eq('user_meal_plan_id', plan_id).eq('day_of_week', day_of_week).eq('meal_type', meal_type).execute()
+        
+        if not meal_result.data:
+            return {"error": f"Refeição não encontrada para {meal_type} de {day_of_week}"}
+        
+        meal_id = meal_result.data[0]['id']
+        old_recipe_name = meal_result.data[0]['recipes']['name']
+        
+        # Atualiza a refeição
+        update_result = supabase.table('plan_meals').update({
+            'recipe_id': new_recipe_id
+        }).eq('id', meal_id).execute()
+        
+        if update_result.data:
+            return {
+                "success": True,
+                "message": f"Refeição atualizada com sucesso!",
+                "plan_name": plan_name,
+                "day": day_of_week,
+                "meal_type": meal_type,
+                "old_recipe": old_recipe_name,
+                "new_recipe": new_recipe_name,
+                "updated_at": update_result.data[0]
+            }
+        else:
+            return {"error": "Falha ao atualizar a refeição"}
+        
+    except Exception as e:
+        return {"error": f"Erro ao atualizar refeição: {str(e)}"}
+
+
 # Executor das tools
 def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
     """Executa uma tool baseada no nome"""
@@ -1141,6 +1499,37 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
         return register_complete_meal_plan(
             phone_number=context_phone,
             plan_data=arguments.get('plan_data')
+        )
+    
+    elif tool_name == "get_user_current_meal":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_user_current_meal(phone_number=context_phone)
+    
+    elif tool_name == "get_user_meal_plan_details":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_user_meal_plan_details(phone_number=context_phone)
+    
+    elif tool_name == "get_today_meals":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_today_meals(phone_number=context_phone)
+    
+    elif tool_name == "suggest_alternative_recipes":
+        return suggest_alternative_recipes(
+            meal_type=arguments.get('meal_type'),
+            exclude_recipe=arguments.get('exclude_recipe')
+        )
+    
+    elif tool_name == "update_meal_in_plan":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return update_meal_in_plan(
+            phone_number=context_phone,
+            day_of_week=arguments.get('day_of_week'),
+            meal_type=arguments.get('meal_type'),
+            new_recipe_name=arguments.get('new_recipe_name')
         )
     
     else:
