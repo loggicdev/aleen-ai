@@ -697,6 +697,28 @@ AVAILABLE_TOOLS = [
                 "required": ["day_of_week", "meal_type", "new_recipe_name"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "interpret_user_choice",
+            "description": "Interpreta escolhas do usuário quando ele se refere a 'Opção 1', 'Opção 2', etc. baseado no contexto da conversa anterior.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_choice": {
+                        "type": "string",
+                        "description": "A escolha exata que o usuário digitou (ex: 'Opção 1', 'primeira', 'omelete')"
+                    },
+                    "meal_type": {
+                        "type": "string",
+                        "description": "Tipo de refeição sendo discutida",
+                        "enum": ["Café da Manhã", "Almoço", "Lanche da Tarde", "Jantar"]
+                    }
+                },
+                "required": ["user_choice", "meal_type"]
+            }
+        }
     }
 ]
 
@@ -1173,10 +1195,50 @@ def register_complete_meal_plan(phone_number: str, plan_data: dict):
 
 
 # Novas funções para consulta e edição de planos alimentares
+def get_user_timezone_offset(phone_number: str):
+    """Obtém o offset de timezone baseado na localização do usuário no onboarding"""
+    try:
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return -3  # Default Brasil se não encontrar usuário
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca resposta da pergunta de localização (step 20, field_name 'location')
+        location_response = supabase.table('onboarding_responses').select('response_value').eq('user_id', user_id).execute()
+        
+        if not location_response.data:
+            return -3  # Default Brasil se não tiver onboarding
+        
+        # Procura pela resposta de location
+        location_value = None
+        for response in location_response.data:
+            # Assumindo que uma das respostas contém a localização
+            response_val = response.get('response_value', '').lower()
+            if any(country in response_val for country in ['brazil', 'brasil', 'br']):
+                return -3  # Brasil UTC-3
+            elif any(country in response_val for country in ['usa', 'united states', 'america']):
+                return -5  # EST UTC-5 (pode variar)
+            elif any(country in response_val for country in ['portugal', 'pt']):
+                return 0   # UTC+0
+            elif any(country in response_val for country in ['argentina', 'ar']):
+                return -3  # UTC-3
+            elif any(country in response_val for country in ['chile', 'cl']):
+                return -3  # UTC-3
+            # Adicione mais países conforme necessário
+        
+        return -3  # Default Brasil
+        
+    except Exception as e:
+        print(f"Erro ao buscar timezone: {str(e)}")
+        return -3  # Default Brasil em caso de erro
+
+
 def get_user_current_meal(phone_number: str):
     """Obtém a próxima refeição do usuário baseada no horário atual"""
     try:
-        from datetime import datetime
+        from datetime import datetime, timedelta
         
         # Busca usuário
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -1192,8 +1254,9 @@ def get_user_current_meal(phone_number: str):
         
         plan_id = plan_result.data[0]['id']
         
-        # Determina dia da semana e refeição atual
-        current_time = datetime.now()
+        # Determina dia da semana e refeição atual - TIMEZONE DO USUÁRIO
+        timezone_offset = get_user_timezone_offset(phone_number)
+        current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
         days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
         current_day = days_pt[current_time.weekday()]
         
@@ -1291,7 +1354,7 @@ def get_user_meal_plan_details(phone_number: str):
 def get_today_meals(phone_number: str):
     """Obtém todas as refeições do dia atual do usuário"""
     try:
-        from datetime import datetime
+        from datetime import datetime, timedelta
         
         # Busca usuário
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -1308,8 +1371,9 @@ def get_today_meals(phone_number: str):
         plan_id = plan_result.data[0]['id']
         plan_name = plan_result.data[0]['name']
         
-        # Determina dia atual
-        current_time = datetime.now()
+        # Determina dia atual - TIMEZONE DO USUÁRIO
+        timezone_offset = get_user_timezone_offset(phone_number)
+        current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
         days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
         today = days_pt[current_time.weekday()]
         
@@ -1348,10 +1412,10 @@ def get_today_meals(phone_number: str):
 
 
 def suggest_alternative_recipes(meal_type: str, exclude_recipe: str = None):
-    """Sugere receitas alternativas por categoria"""
+    """Sugere receitas alternativas REAIS do banco de dados por categoria"""
     try:
-        # Busca todas as receitas disponíveis
-        query = supabase.table('recipes').select('name, description, category')
+        # Busca TODAS as receitas disponíveis no banco
+        query = supabase.table('recipes').select('name, description')
         
         # Exclui receita específica se fornecida
         if exclude_recipe:
@@ -1360,28 +1424,51 @@ def suggest_alternative_recipes(meal_type: str, exclude_recipe: str = None):
         recipes_result = query.execute()
         
         if not recipes_result.data:
-            return {"error": "Nenhuma receita encontrada"}
+            return {"error": "Nenhuma receita encontrada no banco de dados"}
         
-        # Filtra por categoria/tipo de refeição (pode expandir a lógica aqui)
+        # Filtra receitas adequadas baseado no tipo de refeição
         suitable_recipes = []
         for recipe in recipes_result.data:
-            # Lógica simples: todas as receitas são adequadas para qualquer refeição
-            # Pode ser refinada baseado na categoria ou ingredientes
-            suitable_recipes.append({
-                "name": recipe['name'],
-                "description": recipe.get('description', ''),
-                "category": recipe.get('category', 'Não categorizada')
-            })
+            recipe_name = recipe['name'].lower()
+            
+            # Lógica para categorizar receitas por tipo de refeição
+            if meal_type == "Café da Manhã":
+                breakfast_keywords = ['omelete', 'vitamina', 'smoothie', 'panqueca', 'aveia', 'tapioca', 'ovos']
+                if any(keyword in recipe_name for keyword in breakfast_keywords):
+                    suitable_recipes.append(recipe)
+            elif meal_type == "Lanche da Tarde":
+                snack_keywords = ['iogurte', 'mix', 'castanhas', 'pasta', 'amendoim', 'banana']
+                if any(keyword in recipe_name for keyword in snack_keywords):
+                    suitable_recipes.append(recipe)
+            elif meal_type in ["Almoço", "Jantar"]:
+                main_keywords = ['frango', 'peixe', 'salmão', 'carne', 'quinoa', 'salada', 'sopa', 'wrap', 'tilápia']
+                if any(keyword in recipe_name for keyword in main_keywords):
+                    suitable_recipes.append(recipe)
         
-        # Limita a 8 sugestões para não sobrecarregar
-        limited_suggestions = suitable_recipes[:8]
+        # Se não encontrou por keywords, pega todas as receitas disponíveis
+        if not suitable_recipes:
+            suitable_recipes = recipes_result.data
+        
+        # Limita a 4 sugestões e formata com números
+        limited_suggestions = suitable_recipes[:4]
+        
+        # Formata as sugestões com números para facilitar escolha do usuário
+        formatted_suggestions = []
+        for i, recipe in enumerate(limited_suggestions, 1):
+            formatted_suggestions.append({
+                "option_number": i,
+                "recipe_name": recipe['name'],
+                "description": recipe.get('description', ''),
+                "formatted_text": f"{i}. {recipe['name']}"
+            })
         
         return {
             "success": True,
             "meal_type": meal_type,
             "excluded_recipe": exclude_recipe,
-            "suggestions": limited_suggestions,
-            "total_suggestions": len(limited_suggestions)
+            "suggestions": formatted_suggestions,
+            "total_suggestions": len(formatted_suggestions),
+            "message": "Todas as receitas são REAIS e existem no banco de dados"
         }
         
     except Exception as e:
@@ -1406,12 +1493,17 @@ def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new
         plan_id = plan_result.data[0]['id']
         plan_name = plan_result.data[0]['name']
         
-        # Verifica se a nova receita existe
-        recipe_result = supabase.table('recipes').select('id, name').eq('name', new_recipe_name).execute()
+        # Verifica se a nova receita existe (busca case-insensitive)
+        recipe_result = supabase.table('recipes').select('id, name').ilike('name', new_recipe_name).execute()
+        if not recipe_result.data:
+            # Tenta busca com LIKE parcial
+            recipe_result = supabase.table('recipes').select('id, name').ilike('name', f'%{new_recipe_name}%').execute()
+            
         if not recipe_result.data:
             return {"error": f"Receita '{new_recipe_name}' não encontrada no banco de dados"}
         
         new_recipe_id = recipe_result.data[0]['id']
+        actual_recipe_name = recipe_result.data[0]['name']  # Nome correto do banco
         
         # Busca a refeição existente para atualizar
         meal_result = supabase.table('plan_meals').select('id, recipes(name)').eq('user_meal_plan_id', plan_id).eq('day_of_week', day_of_week).eq('meal_type', meal_type).execute()
@@ -1435,7 +1527,7 @@ def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new
                 "day": day_of_week,
                 "meal_type": meal_type,
                 "old_recipe": old_recipe_name,
-                "new_recipe": new_recipe_name,
+                "new_recipe": actual_recipe_name,  # Usa nome correto do banco
                 "updated_at": update_result.data[0]
             }
         else:
@@ -1443,6 +1535,146 @@ def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new
         
     except Exception as e:
         return {"error": f"Erro ao atualizar refeição: {str(e)}"}
+
+
+def interpret_user_choice(user_choice: str, meal_type: str, recent_suggestions: list = None):
+    """Interpreta escolhas do usuário baseado nas SUGESTÕES REAIS da IA"""
+    try:
+        user_choice_lower = user_choice.lower().strip()
+        
+        print(f"🔍 INTERPRETANDO ESCOLHA: '{user_choice}'")
+        print(f"📋 SUGESTÕES RECENTES: {recent_suggestions}")
+        
+        # PRIORIDADE 1: Se temos sugestões da IA, mapeia baseado nelas
+        if recent_suggestions:
+            # Verifica se é escolha numérica (1, 2, 3, etc)
+            import re
+            numeric_match = re.search(r'\b(\d+)\b', user_choice_lower)
+            if numeric_match:
+                choice_number = int(numeric_match.group(1))
+                if 1 <= choice_number <= len(recent_suggestions):
+                    selected = recent_suggestions[choice_number - 1]
+                    recipe_name = selected.get('recipe_name')
+                    print(f"✅ ESCOLHA NUMÉRICA {choice_number} = {recipe_name}")
+                    return {
+                        "success": True,
+                        "interpretation": "numeric_from_ai_suggestions",
+                        "choice_number": choice_number,
+                        "recipe_name": recipe_name,
+                        "message": f"Usuário escolheu opção {choice_number}: {recipe_name}"
+                    }
+            
+            # Verifica referências ordinais (primeira, segunda, etc)
+            ordinal_mapping = {
+                'primeira': 1, 'primeiro': 1, '1ª': 1,
+                'segunda': 2, 'segundo': 2, '2ª': 2,
+                'terceira': 3, 'terceiro': 3, '3ª': 3,
+                'quarta': 4, 'quarto': 4, '4ª': 4
+            }
+            
+            for ordinal, number in ordinal_mapping.items():
+                if ordinal in user_choice_lower:
+                    if 1 <= number <= len(recent_suggestions):
+                        selected = recent_suggestions[number - 1]
+                        recipe_name = selected.get('recipe_name')
+                        print(f"✅ ESCOLHA ORDINAL '{ordinal}' = {recipe_name}")
+                        return {
+                            "success": True,
+                            "interpretation": "ordinal_from_ai_suggestions",
+                            "choice_number": number,
+                            "recipe_name": recipe_name,
+                            "message": f"Usuário escolheu a {ordinal} opção: {recipe_name}"
+                        }
+            
+            # Busca por nome/palavra-chave nas sugestões da IA
+            for i, suggestion in enumerate(recent_suggestions, 1):
+                recipe_name = suggestion.get('recipe_name', '').lower()
+                
+                # Match exato ou parcial
+                if user_choice_lower in recipe_name or recipe_name in user_choice_lower:
+                    print(f"✅ MATCH DIRETO '{user_choice}' = {suggestion.get('recipe_name')}")
+                    return {
+                        "success": True,
+                        "interpretation": "name_from_ai_suggestions",
+                        "choice_number": i,
+                        "recipe_name": suggestion.get('recipe_name'),
+                        "message": f"Usuário escolheu por nome: {suggestion.get('recipe_name')}"
+                    }
+                
+                # Match por palavras-chave
+                recipe_words = recipe_name.split()
+                choice_words = user_choice_lower.split()
+                
+                for choice_word in choice_words:
+                    if len(choice_word) > 3:  # Palavras com mais de 3 chars
+                        for recipe_word in recipe_words:
+                            if choice_word in recipe_word or recipe_word in choice_word:
+                                print(f"✅ MATCH PALAVRA '{choice_word}' = {suggestion.get('recipe_name')}")
+                                return {
+                                    "success": True,
+                                    "interpretation": "keyword_from_ai_suggestions",
+                                    "choice_number": i,
+                                    "recipe_name": suggestion.get('recipe_name'),
+                                    "message": f"Usuário escolheu por palavra-chave: {suggestion.get('recipe_name')}"
+                                }
+        
+        # PRIORIDADE 2: Se não tem sugestões, busca no banco geral
+        print("🔍 Buscando no banco geral...")
+        recipes_result = supabase.table('recipes').select('name').execute()
+        
+        if recipes_result.data:
+            best_match = None
+            best_score = 0
+            
+            for recipe in recipes_result.data:
+                recipe_name = recipe['name'].lower()
+                
+                # Match exato
+                if user_choice_lower == recipe_name or user_choice_lower in recipe_name:
+                    print(f"✅ MATCH EXATO NO BANCO: {recipe['name']}")
+                    return {
+                        "success": True,
+                        "interpretation": "exact_match_database",
+                        "recipe_name": recipe['name'],
+                        "message": f"Encontrou receita exata: {recipe['name']}"
+                    }
+                
+                # Match por palavras (scoring)
+                recipe_words = set(recipe_name.split())
+                choice_words = set(user_choice_lower.split())
+                common_words = recipe_words & choice_words
+                
+                if common_words:
+                    score = len(common_words) / len(recipe_words)
+                    if score > best_score:
+                        best_score = score
+                        best_match = recipe
+            
+            if best_match and best_score > 0.3:
+                print(f"✅ MELHOR MATCH NO BANCO: {best_match['name']} (score: {best_score})")
+                return {
+                    "success": True,
+                    "interpretation": "partial_match_database", 
+                    "recipe_name": best_match['name'],
+                    "confidence": best_score,
+                    "message": f"Melhor match encontrado: {best_match['name']}"
+                }
+        
+        # Não conseguiu interpretar
+        print(f"❌ NÃO CONSEGUIU INTERPRETAR: '{user_choice}'")
+        return {
+            "success": False,
+            "interpretation": "unclear",
+            "message": f"Não consegui interpretar '{user_choice}'. Pode repetir o número da opção ou o nome da receita?",
+            "user_choice": user_choice
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO na interpretação: {str(e)}")
+        return {
+            "success": False,
+            "error": f"Erro ao interpretar escolha: {str(e)}"
+        }
 
 
 # Executor das tools
@@ -1530,6 +1762,12 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             day_of_week=arguments.get('day_of_week'),
             meal_type=arguments.get('meal_type'),
             new_recipe_name=arguments.get('new_recipe_name')
+        )
+    
+    elif tool_name == "interpret_user_choice":
+        return interpret_user_choice(
+            user_choice=arguments.get('user_choice'),
+            meal_type=arguments.get('meal_type')
         )
     
     else:
