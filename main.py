@@ -7,6 +7,7 @@ import requests
 import secrets
 import string
 import traceback
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
@@ -736,8 +737,1070 @@ AVAILABLE_TOOLS = [
                 "required": ["recipe_name"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_user_training_plan",
+            "description": "Verifica se o usuário atual já possui um plano de treino ativo. Use sempre antes de criar um novo plano.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_available_exercises",
+            "description": "Busca exercícios disponíveis no banco com filtros opcionais por grupo muscular, equipamento e dificuldade.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "muscle_group": {
+                        "type": "string",
+                        "description": "Filtrar por grupo muscular (ex: 'Peitoral', 'Dorsal', 'Quadríceps')"
+                    },
+                    "equipment": {
+                        "type": "string", 
+                        "description": "Filtrar por equipamento (ex: 'Halteres', 'Banco', 'Nenhum')"
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "description": "Filtrar por dificuldade",
+                        "enum": ["Iniciante", "Intermediário", "Avançado"]
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_weekly_training_plan",
+            "description": "Cria um plano de treino semanal personalizado para o usuário com exercícios específicos. SEMPRE salva no banco de dados.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_name": {
+                        "type": "string",
+                        "description": "Nome do plano de treino"
+                    },
+                    "objective": {
+                        "type": "string",
+                        "description": "Objetivo do treino (ex: 'Hipertrofia', 'Emagrecimento', 'Força')"
+                    },
+                    "weekly_workouts": {
+                        "type": "object",
+                        "description": "Estrutura dos treinos semanais",
+                        "properties": {
+                            "days": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "day_of_week": {"type": "integer", "description": "Dia da semana (1=segunda, 7=domingo)"},
+                                        "workout_name": {"type": "string", "description": "Nome do treino"},
+                                        "exercises": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "exercise_name": {"type": "string"},
+                                                    "sets": {"type": "integer"},
+                                                    "reps": {"type": "string"},
+                                                    "rest_seconds": {"type": "integer"}
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "required": ["plan_name", "objective", "weekly_workouts"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today_workouts",
+            "description": "Busca os treinos programados para hoje do usuário baseado no seu fuso horário.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_workout_plan_details",
+            "description": "Busca detalhes completos do plano de treino ativo do usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_alternative_exercises",
+            "description": "Sugere exercícios alternativos do banco de dados por grupo muscular.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "muscle_group": {
+                        "type": "string",
+                        "description": "Grupo muscular para buscar alternativas (ex: 'Peitoral', 'Dorsal', 'Quadríceps')"
+                    },
+                    "exclude_exercise": {
+                        "type": "string",
+                        "description": "Nome do exercício a ser excluído das sugestões (opcional)"
+                    }
+                },
+                "required": ["muscle_group"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_workout_exercise",
+            "description": "Atualiza um exercício específico no plano de treino do usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "day_of_week": {
+                        "type": "string",
+                        "description": "Dia da semana do treino",
+                        "enum": ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"]
+                    },
+                    "workout_name": {
+                        "type": "string",
+                        "description": "Nome do treino a ser modificado"
+                    },
+                    "old_exercise_name": {
+                        "type": "string",
+                        "description": "Nome do exercício atual a ser substituído"
+                    },
+                    "new_exercise_name": {
+                        "type": "string",
+                        "description": "Nome do novo exercício para substituir"
+                    }
+                },
+                "required": ["day_of_week", "workout_name", "old_exercise_name", "new_exercise_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_exercise_details",
+            "description": "Busca detalhes completos de um exercício específico incluindo instruções e dicas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "exercise_name": {
+                        "type": "string",
+                        "description": "Nome do exercício para buscar detalhes"
+                    }
+                },
+                "required": ["exercise_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_onboarding_for_workout_plan",
+            "description": "Analisa as respostas do onboarding do usuário para recomendar um plano de treino personalizado.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_workout_session",
+            "description": "Registra uma sessão de treino completada pelo usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "workout_date": {
+                        "type": "string",
+                        "description": "Data do treino no formato YYYY-MM-DD"
+                    },
+                    "workout_name": {
+                        "type": "string",
+                        "description": "Nome do treino realizado"
+                    },
+                    "exercises_performed": {
+                        "type": "array",
+                        "description": "Lista de exercícios realizados",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "exercise_name": {"type": "string"},
+                                "sets_completed": {"type": "integer"},
+                                "reps_completed": {"type": "string"},
+                                "weight_used": {"type": "number"},
+                                "notes": {"type": "string"}
+                            }
+                        }
+                    },
+                    "duration_minutes": {
+                        "type": "integer",
+                        "description": "Duração do treino em minutos"
+                    },
+                    "intensity_rating": {
+                        "type": "integer",
+                        "description": "Avaliação da intensidade do treino (1-10)"
+                    }
+                },
+                "required": ["workout_date", "workout_name", "exercises_performed"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_workout_progress",
+            "description": "Busca o progresso de treinos do usuário incluindo histórico e estatísticas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period_days": {
+                        "type": "integer",
+                        "description": "Período em dias para analisar o progresso (padrão: 30)"
+                    }
+                },
+                "required": []
+            }
+        }
     }
 ]
+
+# Implementações das tools para planos de treino
+def check_user_workout_plan(phone_number: str):
+    """Verifica se o usuário já possui um plano de treino ativo"""
+    try:
+        # Busca usuário pelo telefone
+        user_result = supabase.table('users').select('id, onboarding').eq('phone', phone_number).execute()
+        
+        if not user_result.data:
+            return {
+                "has_plan": False,
+                "message": "Usuário não encontrado",
+                "user_id": None,
+                "onboarding_completed": False
+            }
+        
+        user_data = user_result.data[0]
+        user_id = user_data['id']
+        
+        # Verifica se onboarding foi completado
+        onboarding_completed = user_data.get('onboarding', {}) is not None and user_data.get('onboarding', {}) != {}
+        
+        # Busca plano de treino ativo
+        plan_result = supabase.table('user_workout_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        
+        if plan_result.data:
+            plan = plan_result.data[0]
+            return {
+                "has_plan": True,
+                "message": f"Usuário já possui plano de treino ativo: {plan['name']}",
+                "plan_details": plan,
+                "user_id": user_id,
+                "onboarding_completed": onboarding_completed
+            }
+        else:
+            return {
+                "has_plan": False,
+                "message": "Usuário não possui plano de treino ativo",
+                "user_id": user_id,
+                "onboarding_completed": onboarding_completed
+            }
+    
+    except Exception as e:
+        return {"error": f"Erro ao verificar plano de treino: {str(e)}"}
+
+def get_available_exercises(muscle_group: str = None, equipment: str = None, difficulty: str = None):
+    """Busca exercícios disponíveis com filtros opcionais"""
+    try:
+        query = supabase.table('exercises').select('*')
+        
+        if muscle_group:
+            query = query.eq('primary_muscle_group', muscle_group)
+        if equipment:
+            query = query.eq('equipment_needed', equipment)
+        if difficulty:
+            query = query.eq('difficulty_level', difficulty)
+            
+        result = query.execute()
+        
+        return {
+            "success": True,
+            "exercises": result.data,
+            "total": len(result.data),
+            "filters_applied": {
+                "muscle_group": muscle_group,
+                "equipment": equipment,
+                "difficulty": difficulty
+            }
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar exercícios: {str(e)}"}
+
+def analyze_onboarding_for_workout_plan(phone_number: str):
+    """Analisa respostas do onboarding para recomendar plano de treino personalizado"""
+    try:
+        print(f"🔍 ANALISANDO ONBOARDING PARA TREINO: {phone_number}")
+        
+        # Busca respostas do onboarding
+        onboarding_result = get_user_onboarding_responses(phone_number)
+        
+        if not onboarding_result.get('success'):
+            return {"error": "Não foi possível obter dados do onboarding"}
+        
+        responses = onboarding_result.get('responses', [])
+        user_data = onboarding_result.get('user_data', {})
+        
+        # Processa respostas para extrair informações relevantes para treino
+        fitness_profile = {
+            'experience_level': 'Iniciante',  # Default
+            'goals': [],
+            'available_days': 3,  # Default
+            'session_duration': 60,  # Default
+            'equipment_access': 'Academia',  # Default
+            'physical_limitations': [],
+            'preferred_activities': [],
+            'age_group': 'adult',
+            'gender': 'not_specified'
+        }
+        
+        # Analisa cada resposta do onboarding
+        for response in responses:
+            step = response.get('step_number')
+            field_name = response.get('field_name', '')
+            answer = response.get('answer', '').lower()
+            
+            # Step 1: Nível de experiência com exercícios
+            if step == 1 and 'experiencia' in field_name:
+                if 'iniciante' in answer or 'nunca' in answer:
+                    fitness_profile['experience_level'] = 'Iniciante'
+                elif 'intermediario' in answer or 'alguns meses' in answer:
+                    fitness_profile['experience_level'] = 'Intermediário'
+                elif 'avancado' in answer or 'anos' in answer:
+                    fitness_profile['experience_level'] = 'Avançado'
+            
+            # Step 2: Objetivos principais
+            if step == 2 and 'objetivo' in field_name:
+                if 'perder peso' in answer or 'emagrecer' in answer:
+                    fitness_profile['goals'].append('Perda de Peso')
+                if 'ganhar musculo' in answer or 'hipertrofia' in answer:
+                    fitness_profile['goals'].append('Hipertrofia')
+                if 'melhorar condicionamento' in answer or 'cardio' in answer:
+                    fitness_profile['goals'].append('Condicionamento')
+                if 'forca' in answer or 'força' in answer:
+                    fitness_profile['goals'].append('Força')
+                if 'flexibilidade' in answer or 'alongamento' in answer:
+                    fitness_profile['goals'].append('Flexibilidade')
+            
+            # Step 3: Disponibilidade semanal
+            if step == 3 and 'disponibilidade' in field_name:
+                if '1-2' in answer or 'pouco tempo' in answer:
+                    fitness_profile['available_days'] = 2
+                elif '3-4' in answer or 'moderado' in answer:
+                    fitness_profile['available_days'] = 4
+                elif '5-6' in answer or 'bastante' in answer:
+                    fitness_profile['available_days'] = 5
+                elif 'todos os dias' in answer or '7' in answer:
+                    fitness_profile['available_days'] = 6
+            
+            # Step 4: Duração preferida da sessão
+            if step == 4 and 'duracao' in field_name:
+                if '30' in answer or 'rapido' in answer:
+                    fitness_profile['session_duration'] = 45
+                elif '60' in answer or 'moderado' in answer:
+                    fitness_profile['session_duration'] = 60
+                elif '90' in answer or 'longo' in answer:
+                    fitness_profile['session_duration'] = 75
+            
+            # Step 5: Acesso a equipamentos
+            if step == 5 and 'equipamento' in field_name:
+                if 'casa' in answer or 'peso corporal' in answer:
+                    fitness_profile['equipment_access'] = 'Casa'
+                elif 'academia' in answer or 'completo' in answer:
+                    fitness_profile['equipment_access'] = 'Academia'
+                elif 'limitado' in answer or 'basico' in answer:
+                    fitness_profile['equipment_access'] = 'Básico'
+            
+            # Step 6: Limitações físicas
+            if step == 6 and 'limitacao' in field_name:
+                if 'joelho' in answer:
+                    fitness_profile['physical_limitations'].append('joelho')
+                if 'costa' in answer or 'coluna' in answer:
+                    fitness_profile['physical_limitations'].append('coluna')
+                if 'ombro' in answer:
+                    fitness_profile['physical_limitations'].append('ombro')
+                if 'nenhuma' in answer:
+                    fitness_profile['physical_limitations'] = []
+            
+            # Informações demográficas
+            if 'idade' in field_name:
+                age = int(answer) if answer.isdigit() else 30
+                if age < 25:
+                    fitness_profile['age_group'] = 'young'
+                elif age > 50:
+                    fitness_profile['age_group'] = 'senior'
+                else:
+                    fitness_profile['age_group'] = 'adult'
+            
+            if 'sexo' in field_name or 'genero' in field_name:
+                if 'masculino' in answer or 'homem' in answer:
+                    fitness_profile['gender'] = 'male'
+                elif 'feminino' in answer or 'mulher' in answer:
+                    fitness_profile['gender'] = 'female'
+        
+        print(f"👤 PERFIL FITNESS EXTRAÍDO: {fitness_profile}")
+        
+        # Gera recomendações baseadas no perfil
+        recommendations = generate_workout_recommendations(fitness_profile)
+        
+        return {
+            "success": True,
+            "fitness_profile": fitness_profile,
+            "recommendations": recommendations,
+            "message": "Análise do onboarding concluída com sucesso"
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO na análise do onboarding: {str(e)}")
+        return {"error": f"Erro ao analisar onboarding: {str(e)}"}
+
+def generate_workout_recommendations(fitness_profile: dict):
+    """Gera recomendações de treino baseadas no perfil do usuário"""
+    try:
+        recommendations = {
+            "plan_name": "",
+            "objective": "",
+            "weekly_structure": {},
+            "exercise_selection_criteria": {},
+            "progression_notes": ""
+        }
+        
+        # Define nome e objetivo do plano
+        experience = fitness_profile['experience_level']
+        goals = fitness_profile['goals']
+        days = fitness_profile['available_days']
+        
+        if 'Perda de Peso' in goals:
+            recommendations["plan_name"] = f"Plano Queima Gordura - {experience}"
+            recommendations["objective"] = "Perda de peso e definição muscular"
+        elif 'Hipertrofia' in goals:
+            recommendations["plan_name"] = f"Plano Hipertrofia - {experience}"
+            recommendations["objective"] = "Ganho de massa muscular"
+        elif 'Força' in goals:
+            recommendations["plan_name"] = f"Plano Força - {experience}"
+            recommendations["objective"] = "Desenvolvimento de força e potência"
+        else:
+            recommendations["plan_name"] = f"Plano Geral - {experience}"
+            recommendations["objective"] = "Condicionamento físico geral"
+        
+        # Estrutura semanal baseada na disponibilidade
+        equipment = fitness_profile['equipment_access']
+        duration = fitness_profile['session_duration']
+        
+        if days <= 2:
+            # Treino Full Body 2x/semana
+            recommendations["weekly_structure"] = {
+                "frequency": "2x por semana",
+                "type": "Full Body",
+                "recommended_days": ["segunda-feira", "quinta-feira"],
+                "focus": "Exercícios compostos para máxima eficiência"
+            }
+        elif days <= 4:
+            # Treino Upper/Lower ou ABC
+            if experience == 'Iniciante':
+                recommendations["weekly_structure"] = {
+                    "frequency": "3x por semana",
+                    "type": "Full Body Alternado",
+                    "recommended_days": ["segunda-feira", "quarta-feira", "sexta-feira"],
+                    "focus": "Adaptação e aprendizado de movimentos"
+                }
+            else:
+                recommendations["weekly_structure"] = {
+                    "frequency": "4x por semana",
+                    "type": "Upper/Lower Split",
+                    "recommended_days": ["segunda-feira", "terça-feira", "quinta-feira", "sexta-feira"],
+                    "focus": "Volume moderado com recuperação adequada"
+                }
+        else:
+            # Treino dividido ABC/ABCD
+            recommendations["weekly_structure"] = {
+                "frequency": f"{days}x por semana",
+                "type": "Treino Dividido ABCD",
+                "recommended_days": ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira"],
+                "focus": "Alto volume e especialização muscular"
+            }
+        
+        # Critérios de seleção de exercícios
+        criteria = {
+            "muscle_groups": [],
+            "equipment_preference": equipment,
+            "intensity_level": experience,
+            "avoid_exercises": []
+        }
+        
+        # Exercícios baseados no objetivo
+        if 'Perda de Peso' in goals:
+            criteria["muscle_groups"] = ["Pernas", "Peito", "Costas", "Core"]
+            criteria["cardio_emphasis"] = "Alto"
+            criteria["rep_range"] = "12-20"
+        elif 'Hipertrofia' in goals:
+            criteria["muscle_groups"] = ["Peito", "Costas", "Pernas", "Ombros", "Braços"]
+            criteria["cardio_emphasis"] = "Baixo"
+            criteria["rep_range"] = "8-12"
+        elif 'Força' in goals:
+            criteria["muscle_groups"] = ["Peito", "Costas", "Pernas"]
+            criteria["cardio_emphasis"] = "Muito Baixo"
+            criteria["rep_range"] = "4-8"
+        
+        # Adaptações para limitações físicas
+        limitations = fitness_profile['physical_limitations']
+        if 'joelho' in limitations:
+            criteria["avoid_exercises"].extend(["Agachamento Profundo", "Leg Press Completo"])
+        if 'coluna' in limitations:
+            criteria["avoid_exercises"].extend(["Deadlift", "Agachamento com Barra"])
+        if 'ombro' in limitations:
+            criteria["avoid_exercises"].extend(["Desenvolvimento por Trás", "Supino Inclinado"])
+        
+        recommendations["exercise_selection_criteria"] = criteria
+        
+        # Notas de progressão
+        if experience == 'Iniciante':
+            recommendations["progression_notes"] = "Foco na técnica e progressão gradual. Aumente carga apenas quando dominarem o movimento."
+        elif experience == 'Intermediário':
+            recommendations["progression_notes"] = "Progressão linear semanal. Variar exercícios a cada 4-6 semanas."
+        else:
+            recommendations["progression_notes"] = "Periodização avançada. Ajustar volume e intensidade conforme resposta individual."
+        
+        print(f"💡 RECOMENDAÇÕES GERADAS: {recommendations}")
+        return recommendations
+        
+    except Exception as e:
+        print(f"❌ ERRO ao gerar recomendações: {str(e)}")
+        return {"error": f"Erro ao gerar recomendações: {str(e)}"}
+
+def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str, weekly_workouts: dict):
+    """Cria um plano de treino semanal para o usuário"""
+    try:
+        print(f"🏋️ CRIANDO PLANO DE TREINO: {plan_name} para {phone_number}")
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        print(f"👤 User ID: {user_id}")
+        
+        # Desativa planos existentes
+        supabase.table('user_workout_plans').update({'is_active': False}).eq('user_id', user_id).execute()
+        
+        # Cria novo plano
+        plan_data = {
+            'user_id': user_id,
+            'name': plan_name,
+            'objective': objective,
+            'start_date': datetime.now().strftime('%Y-%m-%d'),
+            'end_date': (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'),
+            'is_active': True
+        }
+        
+        plan_result = supabase.table('user_workout_plans').insert(plan_data).execute()
+        if not plan_result.data:
+            return {"error": "Erro ao criar plano de treino"}
+        
+        plan_id = plan_result.data[0]['id']
+        print(f"📋 Plano criado: {plan_id}")
+        
+        # Adiciona treinos da semana
+        workout_count = 0
+        for day, workouts in weekly_workouts.items():
+            if not workouts:  # Pula dias sem treino
+                continue
+                
+            for workout in workouts:
+                # Cria o treino
+                workout_data = {
+                    'user_workout_plan_id': plan_id,
+                    'day_of_week': day,
+                    'workout_name': workout['name'],
+                    'workout_type': workout.get('type', 'Strength'),
+                    'estimated_duration': workout.get('duration', 60),
+                    'display_order': workout.get('order', 1)
+                }
+                
+                workout_result = supabase.table('plan_workouts').insert(workout_data).execute()
+                if workout_result.data:
+                    workout_id = workout_result.data[0]['id']
+                    
+                    # Adiciona exercícios do treino
+                    for exercise in workout.get('exercises', []):
+                        exercise_data = {
+                            'plan_workout_id': workout_id,
+                            'exercise_id': exercise['exercise_id'],
+                            'sets': exercise.get('sets', 3),
+                            'reps': exercise.get('reps', '10-12'),
+                            'rest_seconds': exercise.get('rest', 60),
+                            'weight_kg': exercise.get('weight', 0),
+                            'notes': exercise.get('notes', ''),
+                            'display_order': exercise.get('order', 1)
+                        }
+                        
+                        supabase.table('workout_exercises').insert(exercise_data).execute()
+                
+                workout_count += 1
+        
+        return {
+            "success": True,
+            "message": f"Plano de treino '{plan_name}' criado com sucesso!",
+            "plan_id": plan_id,
+            "total_workouts": workout_count,
+            "objective": objective,
+            "duration": "30 dias"
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO ao criar plano de treino: {str(e)}")
+        return {"error": f"Erro ao criar plano de treino: {str(e)}"}
+
+def get_today_workouts(phone_number: str):
+    """Busca treinos do usuário para hoje baseado no seu fuso horário"""
+    try:
+        # Busca usuário e timezone
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca timezone do usuário a partir do onboarding
+        timezone_offset = get_user_timezone_offset(phone_number)
+        
+        # Calcula dia atual no timezone do usuário
+        utc_now = datetime.utcnow()
+        user_time = utc_now + timedelta(hours=timezone_offset)
+        current_day = user_time.strftime('%A').lower()
+        
+        # Mapeia dias em inglês para português
+        day_mapping = {
+            'monday': 'segunda-feira',
+            'tuesday': 'terça-feira', 
+            'wednesday': 'quarta-feira',
+            'thursday': 'quinta-feira',
+            'friday': 'sexta-feira',
+            'saturday': 'sábado',
+            'sunday': 'domingo'
+        }
+        
+        day_portuguese = day_mapping.get(current_day, current_day)
+        
+        # Busca treinos de hoje
+        workouts = supabase.table('plan_workouts').select('''
+            *,
+            user_workout_plans(name),
+            workout_exercises(
+                *,
+                exercises(name, primary_muscle_group, instructions)
+            )
+        ''').eq('user_workout_plans.user_id', user_id).eq('day_of_week', day_portuguese).execute()
+        
+        if not workouts.data:
+            return {
+                "success": True,
+                "current_day": day_portuguese,
+                "workouts": [],
+                "message": f"Nenhum treino programado para {day_portuguese}"
+            }
+        
+        return {
+            "success": True,
+            "current_day": day_portuguese,
+            "user_time": user_time.strftime('%H:%M'),
+            "workouts": workouts.data,
+            "total_workouts": len(workouts.data)
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar treinos de hoje: {str(e)}"}
+
+def get_user_workout_plan_details(phone_number: str):
+    """Busca detalhes completos do plano de treino do usuário"""
+    try:
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_workout_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        
+        if not plan_result.data:
+            return {"error": "Nenhum plano de treino ativo encontrado"}
+        
+        plan = plan_result.data[0]
+        
+        # Busca todos os treinos do plano
+        workouts_result = supabase.table('plan_workouts').select('''
+            *,
+            workout_exercises(
+                *,
+                exercises(name, primary_muscle_group, secondary_muscle_group, instructions, equipment_needed)
+            )
+        ''').eq('user_workout_plan_id', plan['id']).execute()
+        
+        return {
+            "success": True,
+            "plan_details": plan,
+            "workouts": workouts_result.data,
+            "total_workouts": len(workouts_result.data)
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar detalhes do plano: {str(e)}"}
+
+def suggest_alternative_exercises(muscle_group: str, exclude_exercise: str = None):
+    """Sugere exercícios alternativos REAIS do banco de dados por grupo muscular"""
+    try:
+        # Busca exercícios do grupo muscular
+        query = supabase.table('exercises').select('name, primary_muscle_group, secondary_muscle_group, equipment_needed, difficulty_level, instructions')
+        
+        # Filtra por grupo muscular (primário ou secundário)
+        if muscle_group:
+            query = query.or_(f'primary_muscle_group.eq.{muscle_group},secondary_muscle_group.eq.{muscle_group}')
+        
+        # Exclui exercício específico se fornecido
+        if exclude_exercise:
+            query = query.neq('name', exclude_exercise)
+        
+        exercises_result = query.execute()
+        
+        if not exercises_result.data:
+            return {"error": f"Nenhum exercício encontrado para {muscle_group}"}
+        
+        # Limita a 4 sugestões e formata com números
+        limited_suggestions = exercises_result.data[:4]
+        
+        formatted_suggestions = []
+        for i, exercise in enumerate(limited_suggestions, 1):
+            formatted_suggestions.append({
+                "option_number": i,
+                "exercise_name": exercise['name'],
+                "primary_muscle": exercise['primary_muscle_group'],
+                "equipment": exercise.get('equipment_needed', 'Não especificado'),
+                "difficulty": exercise.get('difficulty_level', 'Intermediário'),
+                "instructions": exercise.get('instructions', ''),
+                "formatted_text": f"{i}. {exercise['name']}"
+            })
+        
+        return {
+            "success": True,
+            "muscle_group": muscle_group,
+            "excluded_exercise": exclude_exercise,
+            "suggestions": formatted_suggestions,
+            "total_suggestions": len(formatted_suggestions),
+            "message": "Todos os exercícios são REAIS e existem no banco de dados"
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar sugestões: {str(e)}"}
+
+def update_workout_exercise(phone_number: str, day_of_week: str, workout_name: str, old_exercise_name: str, new_exercise_name: str):
+    """Atualiza um exercício específico no plano de treino do usuário"""
+    try:
+        print(f"🔍 UPDATE_WORKOUT_EXERCISE DEBUG:")
+        print(f"📞 Telefone: {phone_number}")
+        print(f"📅 Dia: {day_of_week}")
+        print(f"🏋️ Treino: {workout_name}")
+        print(f"🔄 Trocando: {old_exercise_name} → {new_exercise_name}")
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_workout_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
+        if not plan_result.data:
+            return {"error": "Nenhum plano de treino ativo encontrado"}
+        
+        plan_id = plan_result.data[0]['id']
+        
+        # Verifica se o novo exercício existe
+        exercise_result = supabase.table('exercises').select('id, name').ilike('name', new_exercise_name).execute()
+        if not exercise_result.data:
+            # Tenta busca parcial
+            exercise_result = supabase.table('exercises').select('id, name').ilike('name', f'%{new_exercise_name}%').execute()
+            
+        if not exercise_result.data:
+            return {"error": f"Exercício '{new_exercise_name}' não encontrado no banco de dados"}
+        
+        new_exercise_id = exercise_result.data[0]['id']
+        actual_exercise_name = exercise_result.data[0]['name']
+        
+        # Busca o treino específico
+        workout_result = supabase.table('plan_workouts').select('id').eq('user_workout_plan_id', plan_id).eq('day_of_week', day_of_week).eq('workout_name', workout_name).execute()
+        
+        if not workout_result.data:
+            return {"error": f"Treino '{workout_name}' não encontrado para {day_of_week}"}
+        
+        workout_id = workout_result.data[0]['id']
+        
+        # Busca o exercício a ser substituído
+        exercise_to_update = supabase.table('workout_exercises').select('id, exercises(name)').eq('plan_workout_id', workout_id).eq('exercises.name', old_exercise_name).execute()
+        
+        if not exercise_to_update.data:
+            return {"error": f"Exercício '{old_exercise_name}' não encontrado no treino"}
+        
+        exercise_entry_id = exercise_to_update.data[0]['id']
+        
+        # Atualiza o exercício
+        update_result = supabase.table('workout_exercises').update({
+            'exercise_id': new_exercise_id
+        }).eq('id', exercise_entry_id).execute()
+        
+        if update_result.data:
+            return {
+                "success": True,
+                "message": f"Exercício atualizado com sucesso!",
+                "day": day_of_week,
+                "workout": workout_name,
+                "old_exercise": old_exercise_name,
+                "new_exercise": actual_exercise_name,
+                "updated_at": update_result.data[0]
+            }
+        else:
+            return {"error": "Falha ao atualizar o exercício"}
+        
+    except Exception as e:
+        print(f"❌ ERRO em update_workout_exercise: {str(e)}")
+        return {"error": f"Erro ao atualizar exercício: {str(e)}"}
+
+def get_exercise_details(exercise_name: str):
+    """Busca detalhes completos de um exercício específico"""
+    try:
+        # Busca exercício por nome
+        result = supabase.table('exercises').select('*').ilike('name', exercise_name).execute()
+        
+        if not result.data:
+            # Tenta busca parcial
+            result = supabase.table('exercises').select('*').ilike('name', f'%{exercise_name}%').execute()
+            
+        if not result.data:
+            return {"error": f"Exercício '{exercise_name}' não encontrado"}
+        
+        exercise = result.data[0]
+        
+        return {
+            "success": True,
+            "exercise": exercise,
+            "name": exercise['name'],
+            "primary_muscle": exercise['primary_muscle_group'],
+            "secondary_muscle": exercise.get('secondary_muscle_group'),
+            "equipment": exercise.get('equipment_needed'),
+            "difficulty": exercise.get('difficulty_level'),
+            "instructions": exercise.get('instructions'),
+            "tips": exercise.get('form_tips')
+        }
+        
+    except Exception as e:
+        return {"error": f"Erro ao buscar detalhes do exercício: {str(e)}"}
+
+def record_workout_session(phone_number: str, workout_date: str, workout_name: str, exercises_performed: list, duration_minutes: int = None, intensity_rating: int = None):
+    """Registra uma sessão de treino completada pelo usuário"""
+    try:
+        print(f"🏋️ REGISTRANDO SESSÃO DE TREINO para {phone_number}")
+        print(f"📅 Data: {workout_date}")
+        print(f"🎯 Treino: {workout_name}")
+        print(f"💪 Exercícios: {len(exercises_performed)}")
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Busca plano ativo
+        plan_result = supabase.table('user_workout_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
+        if not plan_result.data:
+            return {"error": "Nenhum plano de treino ativo encontrado"}
+        
+        plan_id = plan_result.data[0]['id']
+        
+        # Registra a sessão de treino
+        session_data = {
+            'user_id': user_id,
+            'workout_plan_id': plan_id,
+            'workout_date': workout_date,
+            'workout_name': workout_name,
+            'duration_minutes': duration_minutes or 60,
+            'intensity_rating': intensity_rating,
+            'completed_at': datetime.now().isoformat()
+        }
+        
+        session_result = supabase.table('workout_sessions').insert(session_data).execute()
+        
+        if not session_result.data:
+            return {"error": "Falha ao registrar sessão de treino"}
+        
+        session_id = session_result.data[0]['id']
+        
+        # Registra os exercícios realizados
+        exercises_registered = []
+        for exercise in exercises_performed:
+            exercise_name = exercise.get('exercise_name')
+            sets_completed = exercise.get('sets_completed', 0)
+            reps_completed = exercise.get('reps_completed', '0')
+            weight_used = exercise.get('weight_used', 0)
+            notes = exercise.get('notes', '')
+            
+            # Busca ID do exercício
+            exercise_result = supabase.table('exercises').select('id').eq('name', exercise_name).execute()
+            if exercise_result.data:
+                exercise_id = exercise_result.data[0]['id']
+                
+                exercise_session_data = {
+                    'workout_session_id': session_id,
+                    'exercise_id': exercise_id,
+                    'sets_completed': sets_completed,
+                    'reps_completed': reps_completed,
+                    'weight_used': weight_used,
+                    'notes': notes
+                }
+                
+                supabase.table('workout_session_exercises').insert(exercise_session_data).execute()
+                exercises_registered.append({
+                    'exercise_name': exercise_name,
+                    'sets': sets_completed,
+                    'reps': reps_completed,
+                    'weight': weight_used
+                })
+        
+        return {
+            "success": True,
+            "message": f"Sessão de treino '{workout_name}' registrada com sucesso!",
+            "session_id": session_id,
+            "workout_date": workout_date,
+            "exercises_registered": len(exercises_registered),
+            "duration_minutes": duration_minutes or 60,
+            "intensity_rating": intensity_rating
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO em record_workout_session: {str(e)}")
+        return {"error": f"Erro ao registrar sessão: {str(e)}"}
+
+def get_workout_progress(phone_number: str, period_days: int = 30):
+    """Busca o progresso de treinos do usuário incluindo histórico e estatísticas"""
+    try:
+        print(f"📊 BUSCANDO PROGRESSO DE TREINOS para {phone_number}")
+        print(f"📅 Período: {period_days} dias")
+        
+        # Busca usuário
+        user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        if not user_result.data:
+            return {"error": "Usuário não encontrado"}
+        
+        user_id = user_result.data[0]['id']
+        
+        # Calcula data de início do período
+        from datetime import datetime, timedelta
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=period_days)
+        
+        # Busca sessões de treino no período
+        sessions_result = supabase.table('workout_sessions').select('''
+            *,
+            workout_session_exercises(
+                *,
+                exercises(name, primary_muscle_group)
+            )
+        ''').eq('user_id', user_id).gte('workout_date', str(start_date)).lte('workout_date', str(end_date)).order('workout_date', desc=True).execute()
+        
+        sessions = sessions_result.data
+        
+        if not sessions:
+            return {
+                "success": True,
+                "period_days": period_days,
+                "total_sessions": 0,
+                "total_exercises": 0,
+                "avg_duration": 0,
+                "avg_intensity": 0,
+                "sessions": [],
+                "message": f"Nenhum treino registrado nos últimos {period_days} dias"
+            }
+        
+        # Calcula estatísticas
+        total_sessions = len(sessions)
+        total_duration = sum(s.get('duration_minutes', 0) for s in sessions)
+        avg_duration = round(total_duration / total_sessions) if total_sessions > 0 else 0
+        
+        intensities = [s.get('intensity_rating') for s in sessions if s.get('intensity_rating')]
+        avg_intensity = round(sum(intensities) / len(intensities), 1) if intensities else 0
+        
+        # Conta total de exercícios únicos
+        all_exercises = set()
+        for session in sessions:
+            for exercise in session.get('workout_session_exercises', []):
+                all_exercises.add(exercise['exercises']['name'])
+        
+        # Prepara dados das sessões
+        formatted_sessions = []
+        for session in sessions:
+            session_exercises = session.get('workout_session_exercises', [])
+            formatted_sessions.append({
+                'date': session['workout_date'],
+                'workout_name': session['workout_name'],
+                'duration_minutes': session.get('duration_minutes', 0),
+                'intensity_rating': session.get('intensity_rating'),
+                'exercises_count': len(session_exercises),
+                'exercises': [ex['exercises']['name'] for ex in session_exercises]
+            })
+        
+        return {
+            "success": True,
+            "period_days": period_days,
+            "total_sessions": total_sessions,
+            "total_exercises": len(all_exercises),
+            "avg_duration_minutes": avg_duration,
+            "avg_intensity_rating": avg_intensity,
+            "sessions": formatted_sessions,
+            "message": f"Progresso dos últimos {period_days} dias: {total_sessions} treinos realizados"
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO em get_workout_progress: {str(e)}")
+        return {"error": f"Erro ao buscar progresso: {str(e)}"}
 
 # Implementações das tools para planos alimentares
 def check_user_meal_plan(phone_number: str):
@@ -1903,6 +2966,86 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             recipe_name=arguments.get('recipe_name')
         )
     
+    # TRAINING TOOLS
+    elif tool_name == "check_user_training_plan":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return check_user_workout_plan(phone_number=context_phone)
+    
+    elif tool_name == "get_available_exercises":
+        return get_available_exercises(
+            muscle_group=arguments.get('muscle_group'),
+            equipment=arguments.get('equipment'),
+            difficulty=arguments.get('difficulty')
+        )
+    
+    elif tool_name == "create_weekly_training_plan":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return create_weekly_workout_plan(
+            phone_number=context_phone,
+            plan_name=arguments.get('plan_name'),
+            objective=arguments.get('objective'),
+            weekly_workouts=arguments.get('weekly_workouts')
+        )
+    
+    elif tool_name == "get_today_workouts":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_today_workouts(phone_number=context_phone)
+    
+    elif tool_name == "get_user_workout_plan_details":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_user_workout_plan_details(phone_number=context_phone)
+    
+    elif tool_name == "suggest_alternative_exercises":
+        return suggest_alternative_exercises(
+            muscle_group=arguments.get('muscle_group'),
+            exclude_exercise=arguments.get('exclude_exercise')
+        )
+    
+    elif tool_name == "update_workout_exercise":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return update_workout_exercise(
+            phone_number=context_phone,
+            day_of_week=arguments.get('day_of_week'),
+            workout_name=arguments.get('workout_name'),
+            old_exercise_name=arguments.get('old_exercise_name'),
+            new_exercise_name=arguments.get('new_exercise_name')
+        )
+    
+    elif tool_name == "get_exercise_details":
+        return get_exercise_details(
+            exercise_name=arguments.get('exercise_name')
+        )
+    
+    elif tool_name == "analyze_onboarding_for_workout_plan":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return analyze_onboarding_for_workout_plan(phone_number=context_phone)
+    
+    elif tool_name == "record_workout_session":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return record_workout_session(
+            phone_number=context_phone,
+            workout_date=arguments.get('workout_date'),
+            workout_name=arguments.get('workout_name'),
+            exercises_performed=arguments.get('exercises_performed'),
+            duration_minutes=arguments.get('duration_minutes'),
+            intensity_rating=arguments.get('intensity_rating')
+        )
+    
+    elif tool_name == "get_workout_progress":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        return get_workout_progress(
+            phone_number=context_phone,
+            period_days=arguments.get('period_days', 30)
+        )
+    
     else:
         return {"error": f"Tool '{tool_name}' não encontrada"}
 
@@ -2112,6 +3255,7 @@ def load_agents_from_supabase():
             'OUT_CONTEXT': 'out_context',             # Agente para mensagens fora de contexto
             'ONBOARDING_REMINDER': 'onboarding_reminder',  # Agente para onboarding incompleto
             'nutrition': 'nutrition',                 # Agente especialista em nutrição
+            'fitness': 'fitness',                     # Agente especialista em treinos
             'onboarding': 'onboarding',              # Agente de onboarding atualizado
             # Mantém compatibilidade com identifiers antigos
             'ONBOARDING_INIT': 'onboarding',
@@ -2383,10 +3527,43 @@ def determine_initial_agent(message: str, user_history: List[str], recommended_a
             print(f"🎯 DECISÃO POR DADOS: onboarding (usuário novo)")
             return "onboarding"
         
-        # USUÁRIO COMPLETO: Prioridade para verificar nutrição
+        # USUÁRIO COMPLETO: Decide entre nutrição e treinos baseado na mensagem
         elif user_context.user_type == "complete_user":
-            print(f"✅ USUÁRIO COMPLETO - direcionando para NUTRITION para verificar plano alimentar")
-            return "nutrition"
+            # Palavras-chave para treinos
+            fitness_keywords = [
+                'treino', 'treinar', 'exercicio', 'exercícios', 'musculação', 'academia', 'workout', 
+                'serie', 'séries', 'repetições', 'rep', 'peso', 'carga', 'cardio', 'aerobico',
+                'hipertrofia', 'definição', 'força', 'resistência', 'alongamento', 'aquecimento',
+                'supino', 'agachamento', 'deadlift', 'pullup', 'flexão', 'abdominal', 'leg press',
+                'bíceps', 'tríceps', 'peito', 'costas', 'pernas', 'ombro', 'gluteo', 'panturrilha',
+                'personal', 'instrutor', 'ficha', 'plano de treino', 'exercitar', 'malhar',
+                'meu treino', 'treino hoje', 'treino de hoje', 'exercicios hoje'
+            ]
+            
+            # Palavras-chave para nutrição
+            nutrition_keywords = [
+                'comida', 'refeição', 'comer', 'almoço', 'jantar', 'café', 'lanche', 'dieta',
+                'nutrição', 'receita', 'ingrediente', 'calorias', 'proteína', 'carboidrato',
+                'gordura', 'vitamina', 'mineral', 'fibra', 'plano alimentar', 'cardápio',
+                'minha refeição', 'refeição hoje', 'janta', 'alimento', 'comendo'
+            ]
+            
+            message_lower = message.lower()
+            
+            # Verifica se tem palavras-chave de treino
+            has_fitness_keywords = any(keyword in message_lower for keyword in fitness_keywords)
+            has_nutrition_keywords = any(keyword in message_lower for keyword in nutrition_keywords)
+            
+            if has_fitness_keywords and not has_nutrition_keywords:
+                print(f"✅ USUÁRIO COMPLETO - direcionando para FITNESS (palavras-chave de treino detectadas)")
+                return "fitness"
+            elif has_nutrition_keywords and not has_fitness_keywords:
+                print(f"✅ USUÁRIO COMPLETO - direcionando para NUTRITION (palavras-chave de nutrição detectadas)")
+                return "nutrition"
+            else:
+                # Default para nutrição se não há palavras-chave específicas ou se há ambas
+                print(f"✅ USUÁRIO COMPLETO - direcionando para NUTRITION (padrão)")
+                return "nutrition"
     
     # PRIORIDADE 2: Se não tem contexto, verifica recomendação específica
     if recommended_agent and recommended_agent in agents_cache:
