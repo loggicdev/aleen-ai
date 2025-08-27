@@ -2080,19 +2080,34 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     print(f"📱 FALLBACK INFO - Phone: {request.phone_number}")
                     
                     # Executa create_weekly_meal_plan com argumentos padrão
-                    fallback_tool_result = execute_tool("create_weekly_meal_plan", {}, request.phone_number)
+                    fallback_args = {
+                        'plan_name': 'Plano Personalizado Aleen',
+                        'weekly_meals': {
+                            'startDate': None,  # Será definido automaticamente
+                            'endDate': None,    # Será definido automaticamente
+                            'weeklyPlan': {}    # Plano vazio, só cria registro principal
+                        }
+                    }
+                    fallback_tool_result = execute_tool("create_weekly_meal_plan", fallback_args, request.phone_number)
                     print(f"📋 FALLBACK RESULT: {fallback_tool_result}")
                     
-                    # Adiciona resultado do fallback às mensagens
-                    messages.append({
-                        "tool_call_id": "fallback_meal_plan",
-                        "role": "tool", 
-                        "name": "create_weekly_meal_plan",
-                        "content": json.dumps(fallback_tool_result, ensure_ascii=False)
-                    })
+                    # Em vez de adicionar tool call fake, adiciona diretamente na resposta
+                    if fallback_tool_result.get('success'):
+                        print(f"✅ FALLBACK SUCCESS: Meal plan criado com sucesso!")
+                        # Força resposta sobre criação bem-sucedida
+                        messages.append({
+                            "role": "assistant",
+                            "content": f"✅ Plano alimentar criado e salvo com sucesso! {fallback_tool_result.get('message', '')}"
+                        })
+                    else:
+                        print(f"❌ FALLBACK ERROR: {fallback_tool_result.get('error', 'Erro desconhecido')}")
+                        # Informa sobre erro na criação
+                        messages.append({
+                            "role": "assistant", 
+                            "content": f"❌ Erro ao criar plano alimentar: {fallback_tool_result.get('error', 'Erro desconhecido')}"
+                        })
                     
-                    print(f"✅ FALLBACK EXECUTADO: create_weekly_meal_plan completado automaticamente")
-                    print(f"🎯 FALLBACK SUCCESS - Meal plan should now be saved to database!")
+                    print(f"🎯 FALLBACK COMPLETED - Check database for meal plan!")
                 
                 # Segunda chamada para gerar resposta final com os resultados das tools
                 final_response = openai_client.chat.completions.create(
