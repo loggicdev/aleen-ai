@@ -2080,12 +2080,16 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     print(f"📱 FALLBACK INFO - Phone: {request.phone_number}")
                     
                     # Executa create_weekly_meal_plan com argumentos padrão
+                    from datetime import datetime, timedelta
+                    start_date = datetime.now().date().isoformat()
+                    end_date = (datetime.now().date() + timedelta(days=7)).isoformat()
+                    
                     fallback_args = {
                         'plan_name': 'Plano Personalizado Aleen',
                         'weekly_meals': {
-                            'startDate': None,  # Será definido automaticamente
-                            'endDate': None,    # Será definido automaticamente
-                            'weeklyPlan': {}    # Plano vazio, só cria registro principal
+                            'startDate': start_date,    # Data atual
+                            'endDate': end_date,        # +7 dias
+                            'weeklyPlan': {}            # Plano vazio, só cria registro principal
                         }
                     }
                     fallback_tool_result = execute_tool("create_weekly_meal_plan", fallback_args, request.phone_number)
