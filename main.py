@@ -1478,46 +1478,67 @@ def suggest_alternative_recipes(meal_type: str, exclude_recipe: str = None):
 def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new_recipe_name: str):
     """Atualiza uma refeição específica no plano alimentar do usuário"""
     try:
+        print(f"🔍 UPDATE_MEAL_IN_PLAN DEBUG:")
+        print(f"📞 Telefone: {phone_number}")
+        print(f"📅 Dia: {day_of_week}")
+        print(f"🍽️ Tipo: {meal_type}")
+        print(f"🥘 Nova receita: {new_recipe_name}")
+        
         # Busca usuário
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        print(f"👤 Usuário encontrado: {user_result.data}")
+        
         if not user_result.data:
-            return {"error": "Usuário não encontrado"}
+            return {"error": f"Usuário não encontrado com telefone {phone_number}"}
         
         user_id = user_result.data[0]['id']
+        print(f"🆔 User ID: {user_id}")
         
         # Busca plano ativo
         plan_result = supabase.table('user_meal_plans').select('id, name').eq('user_id', user_id).eq('is_active', True).execute()
+        print(f"📋 Plano encontrado: {plan_result.data}")
+        
         if not plan_result.data:
             return {"error": "Nenhum plano alimentar ativo encontrado"}
         
         plan_id = plan_result.data[0]['id']
         plan_name = plan_result.data[0]['name']
+        print(f"📋 Plan ID: {plan_id}")
         
         # Verifica se a nova receita existe (busca case-insensitive)
         recipe_result = supabase.table('recipes').select('id, name').ilike('name', new_recipe_name).execute()
+        print(f"🥘 Receita encontrada (exata): {recipe_result.data}")
+        
         if not recipe_result.data:
             # Tenta busca com LIKE parcial
             recipe_result = supabase.table('recipes').select('id, name').ilike('name', f'%{new_recipe_name}%').execute()
+            print(f"🥘 Receita encontrada (parcial): {recipe_result.data}")
             
         if not recipe_result.data:
             return {"error": f"Receita '{new_recipe_name}' não encontrada no banco de dados"}
         
         new_recipe_id = recipe_result.data[0]['id']
         actual_recipe_name = recipe_result.data[0]['name']  # Nome correto do banco
+        print(f"🥘 Recipe ID: {new_recipe_id} - Nome: {actual_recipe_name}")
         
         # Busca a refeição existente para atualizar
         meal_result = supabase.table('plan_meals').select('id, recipes(name)').eq('user_meal_plan_id', plan_id).eq('day_of_week', day_of_week).eq('meal_type', meal_type).execute()
+        print(f"🍽️ Refeição atual encontrada: {meal_result.data}")
         
         if not meal_result.data:
             return {"error": f"Refeição não encontrada para {meal_type} de {day_of_week}"}
         
         meal_id = meal_result.data[0]['id']
         old_recipe_name = meal_result.data[0]['recipes']['name']
+        print(f"🍽️ Meal ID: {meal_id} - Receita antiga: {old_recipe_name}")
         
         # Atualiza a refeição
+        print(f"🔄 Atualizando meal_id {meal_id} para recipe_id {new_recipe_id}")
         update_result = supabase.table('plan_meals').update({
             'recipe_id': new_recipe_id
         }).eq('id', meal_id).execute()
+        
+        print(f"✅ Resultado da atualização: {update_result.data}")
         
         if update_result.data:
             return {
@@ -1528,12 +1549,20 @@ def update_meal_in_plan(phone_number: str, day_of_week: str, meal_type: str, new
                 "meal_type": meal_type,
                 "old_recipe": old_recipe_name,
                 "new_recipe": actual_recipe_name,  # Usa nome correto do banco
-                "updated_at": update_result.data[0]
+                "updated_at": update_result.data[0],
+                "debug_info": {
+                    "phone": phone_number,
+                    "user_id": user_id,
+                    "plan_id": plan_id,
+                    "meal_id": meal_id,
+                    "new_recipe_id": new_recipe_id
+                }
             }
         else:
             return {"error": "Falha ao atualizar a refeição"}
         
     except Exception as e:
+        print(f"❌ ERRO em update_meal_in_plan: {str(e)}")
         return {"error": f"Erro ao atualizar refeição: {str(e)}"}
 
 
