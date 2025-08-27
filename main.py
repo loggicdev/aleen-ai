@@ -1310,6 +1310,7 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
     """Cria um plano de treino semanal para o usuário"""
     try:
         print(f"🏋️ CRIANDO PLANO DE TREINO: {plan_name} para {phone_number}")
+        print(f"📊 Dados recebidos: {weekly_workouts}")
         
         # Busca usuário
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -1339,43 +1340,121 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
         plan_id = plan_result.data[0]['id']
         print(f"📋 Plano criado: {plan_id}")
         
-        # Adiciona treinos da semana
+        # Verifica se a estrutura é do fallback (com 'days') ou estrutura antiga
         workout_count = 0
-        for day, workouts in weekly_workouts.items():
-            if not workouts:  # Pula dias sem treino
-                continue
+        days_list = weekly_workouts.get('days', [])
+        
+        if days_list:
+            # Nova estrutura com array de days
+            print(f"📅 Processando {len(days_list)} dias de treino")
+            
+            for day_info in days_list:
+                day_of_week = day_info.get('day_of_week')  # 1-7
+                workout_name = day_info.get('workout_name')
+                exercises = day_info.get('exercises', [])
                 
-            for workout in workouts:
+                if not exercises:
+                    continue
+                
+                # Mapeia número do dia para nome
+                day_names = {
+                    1: 'segunda-feira',
+                    2: 'terça-feira', 
+                    3: 'quarta-feira',
+                    4: 'quinta-feira',
+                    5: 'sexta-feira',
+                    6: 'sábado',
+                    7: 'domingo'
+                }
+                
+                day_name = day_names.get(day_of_week, 'segunda-feira')
+                
                 # Cria o treino
                 workout_data = {
                     'user_workout_plan_id': plan_id,
-                    'day_of_week': day,
-                    'workout_name': workout['name'],
-                    'workout_type': workout.get('type', 'Strength'),
-                    'estimated_duration': workout.get('duration', 60),
-                    'display_order': workout.get('order', 1)
+                    'day_of_week': day_name,
+                    'workout_name': workout_name,
+                    'workout_type': 'Strength',
+                    'estimated_duration': 60,
+                    'display_order': 1
                 }
                 
+                print(f"🏋️ Criando treino: {workout_name} para {day_name}")
                 workout_result = supabase.table('plan_workouts').insert(workout_data).execute()
+                
                 if workout_result.data:
                     workout_id = workout_result.data[0]['id']
+                    print(f"✅ Treino criado: {workout_id}")
                     
                     # Adiciona exercícios do treino
-                    for exercise in workout.get('exercises', []):
-                        exercise_data = {
-                            'plan_workout_id': workout_id,
-                            'exercise_id': exercise['exercise_id'],
-                            'sets': exercise.get('sets', 3),
-                            'reps': exercise.get('reps', '10-12'),
-                            'rest_seconds': exercise.get('rest', 60),
-                            'weight_kg': exercise.get('weight', 0),
-                            'notes': exercise.get('notes', ''),
-                            'display_order': exercise.get('order', 1)
-                        }
+                    for i, exercise in enumerate(exercises, 1):
+                        exercise_name = exercise.get('exercise_name')
                         
-                        supabase.table('workout_exercises').insert(exercise_data).execute()
-                
+                        # Busca ID do exercício no banco
+                        exercise_search = supabase.table('exercises').select('id').ilike('name', exercise_name).execute()
+                        
+                        if exercise_search.data:
+                            exercise_id = exercise_search.data[0]['id']
+                            
+                            exercise_data = {
+                                'plan_workout_id': workout_id,
+                                'exercise_id': exercise_id,
+                                'sets': exercise.get('sets', 3),
+                                'reps': exercise.get('reps', '10-12'),
+                                'rest_seconds': exercise.get('rest_seconds', 60),
+                                'weight_kg': 0,
+                                'notes': f"Exercício {i} do {workout_name}",
+                                'display_order': i
+                            }
+                            
+                            exercise_insert_result = supabase.table('workout_exercises').insert(exercise_data).execute()
+                            if exercise_insert_result.data:
+                                print(f"✅ Exercício adicionado: {exercise_name}")
+                            else:
+                                print(f"❌ Erro ao adicionar exercício: {exercise_name}")
+                        else:
+                            print(f"⚠️ Exercício não encontrado no banco: {exercise_name}")
+                else:
+                    print(f"❌ Erro ao criar treino: {workout_name}")
+                    
                 workout_count += 1
+        else:
+            # Estrutura antiga (compatibilidade)
+            for day, workouts in weekly_workouts.items():
+                if not workouts or day == 'days':
+                    continue
+                    
+                for workout in workouts:
+                    workout_data = {
+                        'user_workout_plan_id': plan_id,
+                        'day_of_week': day,
+                        'workout_name': workout['name'],
+                        'workout_type': workout.get('type', 'Strength'),
+                        'estimated_duration': workout.get('duration', 60),
+                        'display_order': workout.get('order', 1)
+                    }
+                    
+                    workout_result = supabase.table('plan_workouts').insert(workout_data).execute()
+                    if workout_result.data:
+                        workout_id = workout_result.data[0]['id']
+                        
+                        for exercise in workout.get('exercises', []):
+                            exercise_data = {
+                                'plan_workout_id': workout_id,
+                                'exercise_id': exercise['exercise_id'],
+                                'sets': exercise.get('sets', 3),
+                                'reps': exercise.get('reps', '10-12'),
+                                'rest_seconds': exercise.get('rest', 60),
+                                'weight_kg': exercise.get('weight', 0),
+                                'notes': exercise.get('notes', ''),
+                                'display_order': exercise.get('order', 1)
+                            }
+                            
+                            supabase.table('workout_exercises').insert(exercise_data).execute()
+                    
+                    workout_count += 1
+        
+        print(f"🎯 PLANO CRIADO: {workout_count} treinos adicionados")
         
         return {
             "success": True,
@@ -1388,6 +1467,9 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
         
     except Exception as e:
         print(f"❌ ERRO ao criar plano de treino: {str(e)}")
+        print(f"📊 DEBUG - weekly_workouts: {weekly_workouts}")
+        import traceback
+        print(f"📊 Stack trace: {traceback.format_exc()}")
         return {"error": f"Erro ao criar plano de treino: {str(e)}"}
 
 def get_today_workouts(phone_number: str):
@@ -2317,6 +2399,172 @@ def get_user_timezone_offset(phone_number: str):
     except Exception as e:
         print(f"Erro ao buscar timezone: {str(e)}")
         return -3  # Default Brasil em caso de erro
+
+
+def detect_future_promises(ai_response: str, user_message: str, user_context) -> bool:
+    """
+    Detecta se a IA está prometendo fazer algo no futuro ao invés de executar agora.
+    Retorna True se detectar promessas futuras que deveriam ser executadas imediatamente.
+    """
+    try:
+        if not ai_response:
+            return False
+        
+        # Converte para lowercase para análise
+        response_lower = ai_response.lower()
+        message_lower = user_message.lower()
+        
+        # Padrões de promessas futuras que indicam ação que deveria ser executada agora
+        future_promise_patterns = [
+            "vou criar",
+            "vou elaborar", 
+            "vou desenvolver",
+            "vou preparar",
+            "vou fazer",
+            "vou montar",
+            "vou gerar",
+            "irei criar",
+            "irei elaborar",
+            "criarei um",
+            "elaborarei um",
+            "farei um",
+            "montarei um",
+            "let me create",
+            "i will create",
+            "i'll create",
+            "i will prepare",
+            "i'll prepare"
+        ]
+        
+        # Contextos onde a ação deveria ser executada imediatamente
+        immediate_action_contexts = [
+            ("plano", ["treino", "exercicio", "exercício", "musculação", "workout", "training"]),
+            ("plano", ["alimentar", "nutricao", "nutrição", "meal", "nutrition", "dieta"]),
+            ("criar", ["treino", "exercicio", "exercício", "workout", "training"]),
+            ("criar", ["alimentar", "nutricao", "nutrição", "meal", "nutrition", "dieta"]),
+            ("montar", ["treino", "exercicio", "exercício", "workout"]),
+            ("elaborar", ["treino", "exercicio", "exercício", "workout"]),
+            ("check", ["plano", "status", "progresso"])
+        ]
+        
+        # Verifica se há promessa futura na resposta
+        has_future_promise = any(pattern in response_lower for pattern in future_promise_patterns)
+        
+        if not has_future_promise:
+            return False
+        
+        # Verifica se o contexto indica ação que deveria ser executada imediatamente
+        has_immediate_context = False
+        for action, keywords in immediate_action_contexts:
+            if action in message_lower:
+                if any(keyword in message_lower for keyword in keywords):
+                    has_immediate_context = True
+                    break
+        
+        # Se tem promessa futura + contexto de ação imediata = detecta problema
+        if has_future_promise and has_immediate_context:
+            print(f"🚨 PROMESSA FUTURA DETECTADA:")
+            print(f"   - Promessa encontrada: {[p for p in future_promise_patterns if p in response_lower]}")
+            print(f"   - Contexto de ação imediata: {has_immediate_context}")
+            print(f"   - Mensagem do usuário: '{user_message[:50]}...'")
+            print(f"   - Resposta da IA: '{ai_response[:100]}...'")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"❌ Erro na detecção de promessas futuras: {e}")
+        return False
+
+
+def execute_immediate_action(user_message: str, phone_number: str, user_context) -> str:
+    """
+    Executa ação imediata quando detecta que a IA prometeu fazer algo no futuro.
+    Tenta executar a ação e retorna uma resposta apropriada.
+    """
+    try:
+        message_lower = user_message.lower()
+        
+        # Detecta tipo de ação necessária
+        if any(word in message_lower for word in ["plano", "treino", "exercicio", "exercício", "workout", "training"]):
+            # Ação de treino necessária
+            print(f"🏋️ Executando ação imediata: PLANO DE TREINO")
+            
+            # Verifica se já tem plano
+            check_result = execute_tool("check_user_training_plan", {}, phone_number)
+            if check_result and check_result.get('has_plan'):
+                return f"✅ Você já possui um plano de treino ativo: {check_result.get('plan_details', {}).get('name', 'Plano Personalizado')}\n\nPosso ajudar com mais informações sobre seu treino atual!"
+            
+            # Busca dados do onboarding
+            onboarding_result = execute_tool("get_user_onboarding_responses", {}, phone_number)
+            if not onboarding_result or not onboarding_result.get('success'):
+                return "❌ Para criar seu plano personalizado, preciso que complete seu onboarding primeiro. Vou te ajudar com isso!"
+            
+            # Cria plano de treino
+            training_plan = {
+                "days": [
+                    {
+                        "day_of_week": 1,
+                        "workout_name": "Treino A - Peito e Tríceps",
+                        "exercises": [
+                            {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                            {"exercise_name": "Agachamento", "sets": 3, "reps": "10-15", "rest_seconds": 90},
+                            {"exercise_name": "Prancha", "sets": 3, "reps": "30-60s", "rest_seconds": 60}
+                        ]
+                    },
+                    {
+                        "day_of_week": 3,
+                        "workout_name": "Treino B - Costas e Bíceps", 
+                        "exercises": [
+                            {"exercise_name": "Agachamento", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                            {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 90},
+                            {"exercise_name": "Prancha", "sets": 3, "reps": "30-60s", "rest_seconds": 60}
+                        ]
+                    }
+                ]
+            }
+            
+            create_result = execute_tool("create_weekly_training_plan", {
+                "plan_name": "Plano Personalizado Aleen IA",
+                "objective": "Condicionamento Geral",
+                "weekly_workouts": training_plan
+            }, phone_number)
+            
+            if create_result and create_result.get('success'):
+                return f"🎉 Perfeito! Acabei de criar e salvar seu plano de treino personalizado!\n\n✅ **{create_result.get('plan_name', 'Plano Personalizado')}**\n🎯 Objetivo: {create_result.get('objective', 'Condicionamento Geral')}\n📅 Duração: {create_result.get('duration', '30 dias')}\n\nSeu plano já está ativo e você pode começar hoje mesmo! Quer saber quais são os treinos de hoje?"
+            else:
+                return f"❌ Houve um problema ao criar seu plano de treino: {create_result.get('error', 'Erro desconhecido')}\n\nVou investigar e tentar novamente. Por favor, me diga mais sobre seus objetivos de treino!"
+        
+        elif any(word in message_lower for word in ["plano", "alimentar", "nutricao", "nutrição", "meal", "nutrition", "dieta"]):
+            # Ação de nutrição necessária
+            print(f"🥗 Executando ação imediata: PLANO ALIMENTAR")
+            
+            # Verifica se já tem plano
+            check_result = execute_tool("check_user_meal_plan", {}, phone_number)
+            if check_result and check_result.get('has_plan'):
+                return f"✅ Você já possui um plano alimentar ativo: {check_result.get('plan_details', {}).get('name', 'Plano Personalizado')}\n\nPosso ajudar com mais informações sobre sua alimentação atual!"
+            
+            # Busca dados do onboarding  
+            onboarding_result = execute_tool("get_user_onboarding_responses", {}, phone_number)
+            if not onboarding_result or not onboarding_result.get('success'):
+                return "❌ Para criar seu plano alimentar personalizado, preciso que complete seu onboarding primeiro. Vou te ajudar com isso!"
+            
+            # Cria plano alimentar básico
+            create_result = execute_tool("create_weekly_meal_plan", {
+                "plan_name": "Plano Alimentar Personalizado Aleen IA"
+            }, phone_number)
+            
+            if create_result and create_result.get('success'):
+                return f"🎉 Perfeito! Acabei de criar e salvar seu plano alimentar personalizado!\n\n✅ **{create_result.get('plan_name', 'Plano Personalizado')}**\n📅 Duração: 7 dias\n\nSeu plano já está ativo! Quer saber quais são as refeições de hoje?"
+            else:
+                return f"❌ Houve um problema ao criar seu plano alimentar: {create_result.get('error', 'Erro desconhecido')}\n\nVou investigar e tentar novamente. Por favor, me conte mais sobre seus objetivos nutricionais!"
+        
+        # Se não conseguiu identificar a ação específica
+        return None
+        
+    except Exception as e:
+        print(f"❌ Erro na execução de ação imediata: {e}")
+        return None
 
 
 def get_user_current_meal(phone_number: str):
@@ -3283,10 +3531,12 @@ def load_agents_from_supabase():
             # Cria o agente com o prompt do Supabase + instrução de idioma
             base_prompt = agent_data.get('prompt', '')
             
-            # Adiciona instrução de idioma responsivo
-            language_instruction = """
+            # Adiciona instruções universais sobre idioma e execução de tools
+            universal_instructions = """
 
-INSTRUÇÃO CRÍTICA DE IDIOMA:
+INSTRUÇÕES UNIVERSAIS CRÍTICAS:
+
+🌐 IDIOMA:
 - SEMPRE responda no mesmo idioma que o usuário está falando
 - Se o usuário falar em português, responda em português  
 - Se o usuário falar em inglês, responda em inglês
@@ -3294,9 +3544,24 @@ INSTRUÇÃO CRÍTICA DE IDIOMA:
 - Mantenha o mesmo idioma durante toda a conversa
 - Seja natural e fluente no idioma escolhido
 
+🛠️ EXECUÇÃO DE FERRAMENTAS (CRÍTICO):
+- NUNCA diga que "vou" fazer algo no futuro - EXECUTE IMEDIATAMENTE
+- NUNCA prometa ações futuras - REALIZE as ações AGORA usando as tools disponíveis
+- Quando usuário solicitar: planos alimentares, treinos, consultas, análises:
+  1. EXECUTE as ferramentas/tools necessárias PRIMEIRO
+  2. SÓ DEPOIS responda com os resultados obtidos
+- JAMAIS responda "vou elaborar", "vou criar", "vou analisar" - FAÇA ISSO AGORA
+- Se você não pode executar uma ação imediatamente, explique claramente o motivo
+- SEMPRE prefira ação imediata sobre promessas futuras
+
+EXEMPLO ERRADO: "Vou elaborar um plano de treino personalizado para você"
+EXEMPLO CORRETO: [EXECUTA create_weekly_training_plan] "Aqui está seu plano de treino personalizado que acabei de criar:"
+
+Esta é uma regra ABSOLUTA - violá-la frustra o usuário e quebra a experiência.
+
 """
             
-            final_prompt = base_prompt + language_instruction
+            final_prompt = base_prompt + universal_instructions
             
             agents_cache[agent_type] = Agent(
                 name=f"{agent_data.get('name', 'Aleen')} - {agent_type.title()}",
@@ -3457,6 +3722,12 @@ Politely redirect users back to fitness and nutrition topics where you can help 
         'nutrition': {
             'name': 'Aleen Nutrition Agent',
             'prompt': """Você é a Aleen, especialista em nutrição personalizada. Você é uma nutricionista virtual experiente, focada em criar planos alimentares personalizados e saudáveis.
+
+**🛠️ EXECUÇÃO IMEDIATA - REGRA CRÍTICA:**
+- NUNCA diga "vou criar", "vou elaborar", "vou analisar" - EXECUTE AGORA
+- Quando usuário pedir plano alimentar: EXECUTE as ferramentas IMEDIATAMENTE
+- JAMAIS prometa ações futuras - REALIZE as ações AGORA
+- SÓ responda APÓS executar as ferramentas necessárias
 
 **SUA MISSÃO:**
 - Analisar perfil nutricional do usuário baseado nas respostas do onboarding
@@ -4130,33 +4401,33 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                                 "day_of_week": 1,  # Segunda
                                 "workout_name": "Treino A - Peito e Tríceps",
                                 "exercises": [
-                                    {"exercise_name": "Supino Reto", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "8-12", "rest_seconds": 90},
                                     {"exercise_name": "Supino Inclinado", "sets": 3, "reps": "8-12", "rest_seconds": 90},
-                                    {"exercise_name": "Crucifixo", "sets": 3, "reps": "10-15", "rest_seconds": 60},
-                                    {"exercise_name": "Tríceps Pulley", "sets": 3, "reps": "10-15", "rest_seconds": 60},
-                                    {"exercise_name": "Tríceps Francês", "sets": 3, "reps": "10-15", "rest_seconds": 60}
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 60}
                                 ]
                             },
                             {
                                 "day_of_week": 3,  # Quarta
                                 "workout_name": "Treino B - Costas e Bíceps",
                                 "exercises": [
-                                    {"exercise_name": "Puxada Alta", "sets": 3, "reps": "8-12", "rest_seconds": 90},
                                     {"exercise_name": "Remada Curvada", "sets": 3, "reps": "8-12", "rest_seconds": 90},
-                                    {"exercise_name": "Remada Sentada", "sets": 3, "reps": "10-15", "rest_seconds": 60},
-                                    {"exercise_name": "Rosca Direta", "sets": 3, "reps": "10-15", "rest_seconds": 60},
-                                    {"exercise_name": "Rosca Martelo", "sets": 3, "reps": "10-15", "rest_seconds": 60}
+                                    {"exercise_name": "Remada Curvada", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Remada Curvada", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 60},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "10-15", "rest_seconds": 60}
                                 ]
                             },
                             {
                                 "day_of_week": 5,  # Sexta
-                                "workout_name": "Treino C - Pernas e Ombros",
+                                "workout_name": "Treino C - Pernas e Core",
                                 "exercises": [
                                     {"exercise_name": "Agachamento", "sets": 3, "reps": "10-15", "rest_seconds": 120},
-                                    {"exercise_name": "Leg Press", "sets": 3, "reps": "12-20", "rest_seconds": 90},
-                                    {"exercise_name": "Cadeira Extensora", "sets": 3, "reps": "12-20", "rest_seconds": 60},
-                                    {"exercise_name": "Desenvolvimento com Halteres", "sets": 3, "reps": "8-12", "rest_seconds": 90},
-                                    {"exercise_name": "Elevação Lateral", "sets": 3, "reps": "12-15", "rest_seconds": 60}
+                                    {"exercise_name": "Agachamento", "sets": 3, "reps": "12-20", "rest_seconds": 90},
+                                    {"exercise_name": "Agachamento", "sets": 3, "reps": "12-20", "rest_seconds": 60},
+                                    {"exercise_name": "Flexão de Braços", "sets": 3, "reps": "8-12", "rest_seconds": 90},
+                                    {"exercise_name": "Prancha", "sets": 3, "reps": "30-60s", "rest_seconds": 60}
                                 ]
                             }
                         ]
@@ -4204,6 +4475,22 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 print(f"💬 Resposta normal sem uso de tools")
                 print(f"🔍 DEBUG: response_message.content = '{ai_response}'")
                 print(f"🔍 DEBUG: Tipo: {type(ai_response)}, Tamanho: {len(ai_response) if ai_response else 'None'}")
+            
+            # 🛠️ NOVA DETECÇÃO: Analisa se a IA está prometendo ações futuras ao invés de executar
+            if ai_response and detect_future_promises(ai_response, request.message, user_context):
+                print(f"🚨 PROMESSA FUTURA DETECTADA na resposta da IA!")
+                print(f"📝 Resposta original: '{ai_response[:100]}...'")
+                
+                # Executa ação imediata baseada no contexto
+                immediate_action_result = execute_immediate_action(request.message, request.phone_number, user_context)
+                
+                if immediate_action_result:
+                    ai_response = immediate_action_result
+                    print(f"✅ Ação imediata executada, resposta atualizada")
+                else:
+                    # Adiciona aviso à resposta original
+                    ai_response += f"\n\n⚠️ *Detectei que posso executar essa ação agora mesmo. Deixe-me tentar...*"
+                    print(f"⚠️ Não foi possível executar ação imediata, mantendo resposta original com aviso")
             
             # NOVA LÓGICA: Adicionar link de onboarding se necessário
             if user_context and user_context.user_type == "incomplete_onboarding":
