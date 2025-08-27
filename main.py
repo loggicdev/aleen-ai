@@ -719,6 +719,23 @@ AVAILABLE_TOOLS = [
                 "required": ["user_choice", "meal_type"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recipe_ingredients",
+            "description": "Busca todos os ingredientes de uma receita específica com quantidades exatas. Use quando o usuário perguntar sobre ingredientes de uma receita.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipe_name": {
+                        "type": "string",
+                        "description": "Nome exato da receita para buscar ingredientes"
+                    }
+                },
+                "required": ["recipe_name"]
+            }
+        }
     }
 ]
 
@@ -1706,6 +1723,87 @@ def interpret_user_choice(user_choice: str, meal_type: str, recent_suggestions: 
         }
 
 
+def get_recipe_ingredients(recipe_name: str):
+    """Busca todos os ingredientes de uma receita específica com quantidades"""
+    try:
+        print(f"🔍 BUSCANDO INGREDIENTES DA RECEITA: {recipe_name}")
+        
+        # Busca a receita e seus ingredientes
+        result = supabase.table('recipe_ingredients').select('''
+            recipes(name, description),
+            foods(name),
+            quantity_in_grams,
+            display_unit
+        ''').eq('recipes.name', recipe_name).execute()
+        
+        print(f"📋 Resultado da busca: {result.data}")
+        
+        if not result.data:
+            # Tenta busca case-insensitive
+            recipes_result = supabase.table('recipes').select('id, name').ilike('name', f'%{recipe_name}%').execute()
+            
+            if not recipes_result.data:
+                return {"error": f"Receita '{recipe_name}' não encontrada"}
+            
+            recipe_id = recipes_result.data[0]['id']
+            actual_name = recipes_result.data[0]['name']
+            
+            # Busca ingredientes pelo ID
+            ingredients_result = supabase.table('recipe_ingredients').select('''
+                foods(name),
+                quantity_in_grams,
+                display_unit
+            ''').eq('recipe_id', recipe_id).execute()
+            
+            if not ingredients_result.data:
+                return {
+                    "recipe_name": actual_name,
+                    "ingredients": [],
+                    "message": f"Receita '{actual_name}' encontrada mas não tem ingredientes cadastrados"
+                }
+            
+            # Formata os ingredientes
+            ingredients = []
+            for item in ingredients_result.data:
+                ingredients.append({
+                    "name": item['foods']['name'],
+                    "quantity_grams": float(item['quantity_in_grams']),
+                    "display_unit": item['display_unit']
+                })
+            
+            return {
+                "success": True,
+                "recipe_name": actual_name,
+                "ingredients": ingredients,
+                "total_ingredients": len(ingredients),
+                "message": f"Encontrados {len(ingredients)} ingredientes para {actual_name}"
+            }
+        
+        # Se encontrou diretamente
+        recipe_info = result.data[0]['recipes']
+        ingredients = []
+        
+        for item in result.data:
+            ingredients.append({
+                "name": item['foods']['name'],
+                "quantity_grams": float(item['quantity_in_grams']),
+                "display_unit": item['display_unit']
+            })
+        
+        return {
+            "success": True,
+            "recipe_name": recipe_info['name'],
+            "recipe_description": recipe_info['description'],
+            "ingredients": ingredients,
+            "total_ingredients": len(ingredients),
+            "message": f"Ingredientes da receita {recipe_info['name']}"
+        }
+        
+    except Exception as e:
+        print(f"❌ ERRO em get_recipe_ingredients: {str(e)}")
+        return {"error": f"Erro ao buscar ingredientes: {str(e)}"}
+
+
 # Executor das tools
 def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
     """Executa uma tool baseada no nome"""
@@ -1796,7 +1894,13 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
     elif tool_name == "interpret_user_choice":
         return interpret_user_choice(
             user_choice=arguments.get('user_choice'),
-            meal_type=arguments.get('meal_type')
+            meal_type=arguments.get('meal_type'),
+            recent_suggestions=arguments.get('recent_suggestions')
+        )
+    
+    elif tool_name == "get_recipe_ingredients":
+        return get_recipe_ingredients(
+            recipe_name=arguments.get('recipe_name')
         )
     
     else:
