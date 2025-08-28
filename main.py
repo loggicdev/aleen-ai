@@ -1431,46 +1431,38 @@ def get_today_workouts(phone_number: str):
         
         user_id = user_result.data[0]['id']
         
-        # Busca timezone do usuário a partir do onboarding
+        # Determina dia atual - MESMO MÉTODO DA NUTRIÇÃO
         timezone_offset = get_user_timezone_offset(phone_number)
+        current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
+        days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
+        today = days_pt[current_time.weekday()]
         
-        # Calcula dia atual no timezone do usuário
-        utc_now = datetime.utcnow()
-        user_time = utc_now + timedelta(hours=timezone_offset)
-        current_day = user_time.strftime('%A').lower()
-        
-        # Mapeia dias em inglês para português (IGUAL À NUTRIÇÃO!)
-        day_mapping = {
-            'monday': 'segunda-feira',
-            'tuesday': 'terça-feira', 
-            'wednesday': 'quarta-feira',
-            'thursday': 'quinta-feira',
-            'friday': 'sexta-feira',
-            'saturday': 'sábado',
-            'sunday': 'domingo'
-        }
-        
-        day_portuguese = day_mapping.get(current_day, current_day)
+        print(f"🕒 DEBUG TIMEZONE:")
+        print(f"   UTC now: {datetime.utcnow()}")
+        print(f"   Timezone offset: {timezone_offset}")
+        print(f"   Current time: {current_time}")
+        print(f"   Weekday: {current_time.weekday()}")
+        print(f"   Today PT: {today}")
         
         # Busca treinos de hoje usando TEXTO do dia
         workouts = supabase.table('plan_workouts').select('''
             *,
             training_plans(name),
             workout_templates(name, description)
-        ''').eq('training_plans.user_id', user_id).eq('day_of_week', day_portuguese).execute()
+        ''').eq('training_plans.user_id', user_id).eq('day_of_week', today).execute()
         
         if not workouts.data:
             return {
                 "success": True,
-                "current_day": day_portuguese,
+                "current_day": today,
                 "workouts": [],
-                "message": f"Nenhum treino programado para {day_portuguese}"
+                "message": f"Nenhum treino programado para {today}"
             }
         
         return {
             "success": True,
-            "current_day": day_portuguese,
-            "user_time": user_time.strftime('%H:%M'),
+            "current_day": today,
+            "user_time": current_time.strftime('%H:%M'),
             "workouts": workouts.data,
             "total_workouts": len(workouts.data)
         }
