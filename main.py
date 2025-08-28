@@ -1514,18 +1514,11 @@ def get_user_workout_plan_details(phone_number: str):
         # CALCULA PRÓXIMO TREINO BASEADO NO DIA ATUAL
         print("🔍 DEBUG: Iniciando cálculo do próximo treino...")
         
-        # Busca timezone do usuário
-        onboarding_result = supabase.table('users').select('onboarding').eq('id', user_id).execute()
-        print(f"🔍 DEBUG: Onboarding result: {onboarding_result.data}")
-        
-        timezone_offset = -3  # Default Brasil
-        if onboarding_result.data and onboarding_result.data[0].get('onboarding'):
-            timezone_offset = onboarding_result.data[0]['onboarding'].get('timezone_offset', -3)
-        print(f"🔍 DEBUG: Timezone offset: {timezone_offset}")
-        
-        # Calcula dia atual no timezone do usuário
+        # Busca timezone do usuário (IGUAL NUTRIÇÃO!)
+        timezone_offset = get_user_timezone_offset(phone_number)
         current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
         current_weekday = current_time.weekday()  # 0=segunda, 1=terça, 2=quarta, 3=quinta, 4=sexta, 5=sábado, 6=domingo
+        print(f"🔍 DEBUG: Timezone offset: {timezone_offset}")
         print(f"🔍 DEBUG: Current time: {current_time}, Weekday: {current_weekday}")
         
         # Mapeia número para texto
