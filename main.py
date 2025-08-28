@@ -1514,7 +1514,6 @@ def get_user_workout_plan_details(phone_number: str):
         
         # CALCULA PRÓXIMO TREINO BASEADO NO DIA ATUAL
         # Busca timezone do usuário
-        user_id = user_result.data[0]['id']
         onboarding_result = supabase.table('users').select('onboarding').eq('id', user_id).execute()
         
         timezone_offset = -3  # Default Brasil
