@@ -825,24 +825,7 @@ AVAILABLE_TOOLS = [
             }
         }
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_today_workouts",
-            "description": "Busca os treinos programados para hoje, amanhã ou qualquer dia do usuário baseado no seu fuso horário.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "day_offset": {
-                        "type": "integer",
-                        "description": "Offset de dias: 0=hoje, 1=amanhã, -1=ontem, etc. Default: 0",
-                        "default": 0
-                    }
-                },
-                "required": []
-            }
-        }
-    },
+
     {
         "type": "function",
         "function": {
@@ -3213,14 +3196,6 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             plan_name=arguments.get('plan_name'),
             objective=arguments.get('objective'),
             weekly_workouts=arguments.get('weekly_workouts')
-        )
-    
-    elif tool_name == "get_today_workouts":
-        if not context_phone:
-            return {"error": "Telefone não disponível no contexto"}
-        return get_today_workouts(
-            phone_number=context_phone,
-            day_offset=arguments.get('day_offset', 0)
         )
     
     elif tool_name == "get_user_workout_plan_details":
