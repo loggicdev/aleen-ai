@@ -829,10 +829,16 @@ AVAILABLE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_today_workouts",
-            "description": "Busca os treinos programados para hoje do usuário baseado no seu fuso horário.",
+            "description": "Busca os treinos programados para hoje, amanhã ou qualquer dia do usuário baseado no seu fuso horário.",
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "day_offset": {
+                        "type": "integer",
+                        "description": "Offset de dias: 0=hoje, 1=amanhã, -1=ontem, etc. Default: 0",
+                        "default": 0
+                    }
+                },
                 "required": []
             }
         }
@@ -1421,8 +1427,8 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
         print(f"📊 Stack trace: {traceback.format_exc()}")
         return {"error": f"Erro ao criar plano de treino: {str(e)}"}
 
-def get_today_workouts(phone_number: str):
-    """Busca treinos do usuário para hoje baseado no seu fuso horário"""
+def get_today_workouts(phone_number: str, day_offset: int = 0):
+    """Busca treinos do usuário para hoje/amanhã/ontem baseado no seu fuso horário"""
     try:
         # Busca usuário e timezone
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
@@ -1434,35 +1440,53 @@ def get_today_workouts(phone_number: str):
         # Determina dia atual - MESMO MÉTODO DA NUTRIÇÃO
         timezone_offset = get_user_timezone_offset(phone_number)
         current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
+        
+        # Aplica o offset de dias (0=hoje, 1=amanhã, -1=ontem)
+        target_time = current_time + timedelta(days=day_offset)
+        
         days_pt = ['segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado', 'domingo']
-        today = days_pt[current_time.weekday()]
+        target_day = days_pt[target_time.weekday()]
+        
+        # Mapeia o dia para descrição
+        day_names = {
+            -1: "ontem",
+            0: "hoje", 
+            1: "amanhã",
+            2: "depois de amanhã"
+        }
+        day_description = day_names.get(day_offset, f"em {day_offset} dias")
         
         print(f"🕒 DEBUG TIMEZONE:")
         print(f"   UTC now: {datetime.utcnow()}")
         print(f"   Timezone offset: {timezone_offset}")
         print(f"   Current time: {current_time}")
-        print(f"   Weekday: {current_time.weekday()}")
-        print(f"   Today PT: {today}")
+        print(f"   Day offset: {day_offset}")
+        print(f"   Target time: {target_time}")
+        print(f"   Target weekday: {target_time.weekday()}")
+        print(f"   Target day PT: {target_day}")
+        print(f"   Description: {day_description}")
         
-        # Busca treinos de hoje usando TEXTO do dia
+        # Busca treinos do dia usando TEXTO do dia
         workouts = supabase.table('plan_workouts').select('''
             *,
             training_plans(name),
             workout_templates(name, description)
-        ''').eq('training_plans.user_id', user_id).eq('day_of_week', today).execute()
+        ''').eq('training_plans.user_id', user_id).eq('day_of_week', target_day).execute()
         
         if not workouts.data:
             return {
                 "success": True,
-                "current_day": today,
+                "current_day": target_day,
+                "day_description": day_description,
                 "workouts": [],
-                "message": f"Nenhum treino programado para {today}"
+                "message": f"Nenhum treino programado para {day_description} ({target_day})"
             }
         
         return {
             "success": True,
-            "current_day": today,
-            "user_time": current_time.strftime('%H:%M'),
+            "current_day": target_day,
+            "day_description": day_description,
+            "user_time": target_time.strftime('%H:%M'),
             "workouts": workouts.data,
             "total_workouts": len(workouts.data)
         }
@@ -3194,7 +3218,10 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
     elif tool_name == "get_today_workouts":
         if not context_phone:
             return {"error": "Telefone não disponível no contexto"}
-        return get_today_workouts(phone_number=context_phone)
+        return get_today_workouts(
+            phone_number=context_phone,
+            day_offset=arguments.get('day_offset', 0)
+        )
     
     elif tool_name == "get_user_workout_plan_details":
         if not context_phone:
