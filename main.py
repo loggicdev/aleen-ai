@@ -1480,14 +1480,127 @@ def get_today_workouts(phone_number: str, day_offset: int = 0):
 def get_user_workout_plan_details(phone_number: str):
     """Busca detalhes completos do plano de treino do usuário"""
     try:
+        print(f"🔍 DEBUG: Buscando plano para telefone: {phone_number}")
+        
         # Busca usuário
         user_result = supabase.table('users').select('id').eq('phone', phone_number).execute()
+        print(f"🔍 DEBUG: User result: {user_result.data}")
+        
         if not user_result.data:
+            print("❌ DEBUG: Usuário não encontrado")
             return {"error": "Usuário não encontrado"}
         
         user_id = user_result.data[0]['id']
+        print(f"🔍 DEBUG: User ID encontrado: {user_id}")
         
         # Busca plano ativo (TABELA CORRETA!)
+        plan_result = supabase.table('training_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        print(f"🔍 DEBUG: Plan result: {plan_result.data}")
+        
+        if not plan_result.data:
+            print("❌ DEBUG: Nenhum plano ativo encontrado")
+            return {"error": "Nenhum plano de treino ativo encontrado"}
+        
+        plan = plan_result.data[0]
+        print(f"🔍 DEBUG: Plano encontrado: {plan['name']}, ID: {plan['id']}")
+        
+        # Busca todos os treinos do plano (SIMPLIFICADO)
+        workouts_result = supabase.table('plan_workouts').select('*, workout_templates(name, description)').eq('training_plan_id', plan['id']).order('day_of_week').execute()
+        print(f"🔍 DEBUG: Workouts result: {len(workouts_result.data)} workouts encontrados")
+        
+        for workout in workouts_result.data:
+            print(f"🔍 DEBUG: Workout - Dia: {workout['day_of_week']}, Template: {workout.get('workout_templates', {}).get('name', 'N/A')}")
+        
+        # CALCULA PRÓXIMO TREINO BASEADO NO DIA ATUAL
+        print("🔍 DEBUG: Iniciando cálculo do próximo treino...")
+        
+        # Busca timezone do usuário
+        onboarding_result = supabase.table('users').select('onboarding').eq('id', user_id).execute()
+        print(f"🔍 DEBUG: Onboarding result: {onboarding_result.data}")
+        
+        timezone_offset = -3  # Default Brasil
+        if onboarding_result.data and onboarding_result.data[0].get('onboarding'):
+            timezone_offset = onboarding_result.data[0]['onboarding'].get('timezone_offset', -3)
+        print(f"🔍 DEBUG: Timezone offset: {timezone_offset}")
+        
+        # Calcula dia atual no timezone do usuário
+        current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
+        current_weekday = current_time.weekday()  # 0=segunda, 1=terça, 2=quarta, 3=quinta, 4=sexta, 5=sábado, 6=domingo
+        print(f"🔍 DEBUG: Current time: {current_time}, Weekday: {current_weekday}")
+        
+        # Mapeia número para texto
+        days_map = {
+            0: "segunda-feira",
+            1: "terça-feira", 
+            2: "quarta-feira",
+            3: "quinta-feira",
+            4: "sexta-feira",
+            5: "sábado",
+            6: "domingo"
+        }
+        
+        current_day_name = days_map[current_weekday]
+        print(f"🔍 DEBUG: Dia atual: {current_day_name}")
+        
+        # Encontra próximo treino
+        next_workout = None
+        next_workout_day = None
+        days_until_next = None
+        
+        print("🔍 DEBUG: Procurando treino para hoje...")
+        # Primeiro verifica se hoje tem treino
+        for workout in workouts_result.data:
+            print(f"🔍 DEBUG: Comparando '{workout['day_of_week']}' com '{current_day_name}'")
+            if workout['day_of_week'] == current_day_name:
+                next_workout = workout
+                next_workout_day = "hoje"
+                days_until_next = 0
+                print(f"✅ DEBUG: Treino encontrado para hoje: {workout.get('workout_templates', {}).get('name', 'N/A')}")
+                break
+        
+        # Se hoje não tem, procura os próximos dias
+        if not next_workout:
+            print("🔍 DEBUG: Hoje não tem treino, procurando próximos dias...")
+            for days_ahead in range(1, 8):  # Próximos 7 dias
+                target_weekday = (current_weekday + days_ahead) % 7
+                target_day_name = days_map[target_weekday]
+                print(f"🔍 DEBUG: Verificando {target_day_name} (dias à frente: {days_ahead})")
+                
+                for workout in workouts_result.data:
+                    if workout['day_of_week'] == target_day_name:
+                        next_workout = workout
+                        if days_ahead == 1:
+                            next_workout_day = "amanhã"
+                        else:
+                            next_workout_day = target_day_name
+                        days_until_next = days_ahead
+                        print(f"✅ DEBUG: Próximo treino encontrado: {target_day_name} - {workout.get('workout_templates', {}).get('name', 'N/A')}")
+                        break
+                
+                if next_workout:
+                    break
+        
+        result = {
+            "success": True,
+            "plan_details": plan,
+            "workouts": workouts_result.data,
+            "total_workouts": len(workouts_result.data),
+            "plan_name": plan['name'],
+            "objective": plan['objective'],
+            "current_day": current_day_name,
+            "next_workout": next_workout,
+            "next_workout_day": next_workout_day,
+            "days_until_next": days_until_next
+        }
+        
+        print(f"✅ DEBUG: Resultado final - Próximo treino: {next_workout_day}")
+        return result
+        
+    except Exception as e:
+        print(f"❌ DEBUG: ERRO CAPTURADO: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Erro ao buscar detalhes do plano: {str(e)}"}
         plan_result = supabase.table('training_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
         
         if not plan_result.data:
