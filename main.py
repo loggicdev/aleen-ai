@@ -1356,8 +1356,21 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
             print(f"📅 Processando {len(days_list)} dias de treino")
             
             for day_info in days_list:
-                day_of_week = day_info.get('day_of_week')  # 1-7 (correto!)
+                day_of_week = day_info.get('day_of_week')  # 1-7 
                 workout_name = day_info.get('workout_name', 'Full Body Iniciante')
+                
+                # Converte número para dia da semana em português
+                day_names = {
+                    1: 'segunda-feira',
+                    2: 'terça-feira', 
+                    3: 'quarta-feira',
+                    4: 'quinta-feira',
+                    5: 'sexta-feira',
+                    6: 'sábado',
+                    7: 'domingo'
+                }
+                
+                day_text = day_names.get(day_of_week, 'segunda-feira')
                 
                 # Mapeia nome do treino para template existente (estratégia simples)
                 template_id = None
@@ -1372,14 +1385,14 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
                     template_id = available_templates.get('Full Body Iniciante')
                 
                 if template_id:
-                    # INSERE NA ESTRUTURA CORRETA!
+                    # INSERE NA ESTRUTURA CORRETA COM TEXTO!
                     plan_workout_data = {
                         'training_plan_id': plan_id,        # CORRETO: plano principal
                         'workout_template_id': template_id,  # CORRETO: template existente  
-                        'day_of_week': day_of_week          # CORRETO: 1-7 (smallint)
+                        'day_of_week': day_text             # CORRETO: "segunda-feira" em texto
                     }
                     
-                    print(f"🏋️ Ligando template '{workout_name}' ao dia {day_of_week}")
+                    print(f"🏋️ Ligando template '{workout_name}' ao dia {day_text}")
                     plan_workout_result = supabase.table('plan_workouts').insert(plan_workout_data).execute()
                     
                     if plan_workout_result.data:
@@ -1426,7 +1439,7 @@ def get_today_workouts(phone_number: str):
         user_time = utc_now + timedelta(hours=timezone_offset)
         current_day = user_time.strftime('%A').lower()
         
-        # Mapeia dias em inglês para português
+        # Mapeia dias em inglês para português (IGUAL À NUTRIÇÃO!)
         day_mapping = {
             'monday': 'segunda-feira',
             'tuesday': 'terça-feira', 
@@ -1439,15 +1452,12 @@ def get_today_workouts(phone_number: str):
         
         day_portuguese = day_mapping.get(current_day, current_day)
         
-        # Busca treinos de hoje
+        # Busca treinos de hoje usando TEXTO do dia
         workouts = supabase.table('plan_workouts').select('''
             *,
-            user_workout_plans(name),
-            workout_exercises(
-                *,
-                exercises(name, primary_muscle_group, instructions)
-            )
-        ''').eq('user_workout_plans.user_id', user_id).eq('day_of_week', day_portuguese).execute()
+            training_plans(name),
+            workout_templates(name, description)
+        ''').eq('training_plans.user_id', user_id).eq('day_of_week', day_portuguese).execute()
         
         if not workouts.data:
             return {
@@ -1478,28 +1488,38 @@ def get_user_workout_plan_details(phone_number: str):
         
         user_id = user_result.data[0]['id']
         
-        # Busca plano ativo
-        plan_result = supabase.table('user_workout_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        # Busca plano ativo (TABELA CORRETA!)
+        plan_result = supabase.table('training_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
         
         if not plan_result.data:
             return {"error": "Nenhum plano de treino ativo encontrado"}
         
         plan = plan_result.data[0]
         
-        # Busca todos os treinos do plano
+        # Busca todos os treinos do plano (ESTRUTURA CORRIGIDA!)
         workouts_result = supabase.table('plan_workouts').select('''
             *,
-            workout_exercises(
-                *,
-                exercises(name, primary_muscle_group, secondary_muscle_group, instructions, equipment_needed)
+            workout_templates(
+                name,
+                description,
+                workout_template_exercises(
+                    order_in_workout,
+                    target_sets,
+                    target_reps,
+                    target_rest_seconds,
+                    notes,
+                    exercises(name, description, target_muscle_groups, equipment_needed, difficulty_level)
+                )
             )
-        ''').eq('user_workout_plan_id', plan['id']).execute()
+        ''').eq('training_plan_id', plan['id']).order('day_of_week').execute()
         
         return {
             "success": True,
             "plan_details": plan,
             "workouts": workouts_result.data,
-            "total_workouts": len(workouts_result.data)
+            "total_workouts": len(workouts_result.data),
+            "plan_name": plan['name'],
+            "objective": plan['objective']
         }
         
     except Exception as e:
@@ -1567,8 +1587,8 @@ def update_workout_exercise(phone_number: str, day_of_week: str, workout_name: s
         
         user_id = user_result.data[0]['id']
         
-        # Busca plano ativo
-        plan_result = supabase.table('user_workout_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
+        # Busca plano ativo (CORRIGIDO!)
+        plan_result = supabase.table('training_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
         if not plan_result.data:
             return {"error": "Nenhum plano de treino ativo encontrado"}
         
@@ -1669,8 +1689,8 @@ def record_workout_session(phone_number: str, workout_date: str, workout_name: s
         
         user_id = user_result.data[0]['id']
         
-        # Busca plano ativo
-        plan_result = supabase.table('user_workout_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
+        # Busca plano ativo (CORRIGIDO!)
+        plan_result = supabase.table('training_plans').select('id').eq('user_id', user_id).eq('is_active', True).execute()
         if not plan_result.data:
             return {"error": "Nenhum plano de treino ativo encontrado"}
         
