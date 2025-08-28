@@ -1495,22 +1495,8 @@ def get_user_workout_plan_details(phone_number: str):
         
         plan = plan_result.data[0]
         
-        # Busca todos os treinos do plano (ESTRUTURA CORRIGIDA!)
-        workouts_result = supabase.table('plan_workouts').select('''
-            *,
-            workout_templates(
-                name,
-                description,
-                workout_template_exercises(
-                    order_in_workout,
-                    target_sets,
-                    target_reps,
-                    target_rest_seconds,
-                    notes,
-                    exercises(name, description, target_muscle_groups, equipment_needed, difficulty_level)
-                )
-            )
-        ''').eq('training_plan_id', plan['id']).order('day_of_week').execute()
+        # Busca todos os treinos do plano (SIMPLIFICADO)
+        workouts_result = supabase.table('plan_workouts').select('*, workout_templates(name, description)').eq('training_plan_id', plan['id']).order('day_of_week').execute()
         
         # CALCULA PRÓXIMO TREINO BASEADO NO DIA ATUAL
         # Busca timezone do usuário
@@ -1521,7 +1507,6 @@ def get_user_workout_plan_details(phone_number: str):
             timezone_offset = onboarding_result.data[0]['onboarding'].get('timezone_offset', -3)
         
         # Calcula dia atual no timezone do usuário
-        from datetime import datetime, timedelta
         current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
         current_weekday = current_time.weekday()  # 0=segunda, 1=terça, 2=quarta, 3=quinta, 4=sexta, 5=sábado, 6=domingo
         
