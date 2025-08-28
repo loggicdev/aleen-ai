@@ -1504,8 +1504,22 @@ def get_user_workout_plan_details(phone_number: str):
         plan = plan_result.data[0]
         print(f"🔍 DEBUG: Plano encontrado: {plan['name']}, ID: {plan['id']}")
         
-        # Busca todos os treinos do plano (SIMPLIFICADO)
-        workouts_result = supabase.table('plan_workouts').select('*, workout_templates(name, description)').eq('training_plan_id', plan['id']).order('day_of_week').execute()
+        # Busca todos os treinos do plano COM EXERCÍCIOS COMPLETOS
+        workouts_result = supabase.table('plan_workouts').select('''
+            *,
+            workout_templates(
+                name,
+                description,
+                workout_template_exercises(
+                    order_in_workout,
+                    target_sets,
+                    target_reps,
+                    target_rest_seconds,
+                    notes,
+                    exercises(name, description, target_muscle_groups, equipment_needed, difficulty_level)
+                )
+            )
+        ''').eq('training_plan_id', plan['id']).order('day_of_week').execute()
         print(f"🔍 DEBUG: Workouts result: {len(workouts_result.data)} workouts encontrados")
         
         for workout in workouts_result.data:
