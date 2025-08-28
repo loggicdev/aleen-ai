@@ -1013,7 +1013,7 @@ def check_user_workout_plan(phone_number: str):
         onboarding_completed = user_data.get('onboarding', {}) is not None and user_data.get('onboarding', {}) != {}
         
         # Busca plano de treino ativo
-        plan_result = supabase.table('user_workout_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
+        plan_result = supabase.table('training_plans').select('*').eq('user_id', user_id).eq('is_active', True).execute()
         
         if plan_result.data:
             plan = plan_result.data[0]
@@ -1307,7 +1307,7 @@ def generate_workout_recommendations(fitness_profile: dict):
         return {"error": f"Erro ao gerar recomendações: {str(e)}"}
 
 def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str, weekly_workouts: dict):
-    """Cria um plano de treino semanal para o usuário"""
+    """Cria um plano de treino semanal SIMPLES usando templates existentes"""
     try:
         print(f"🏋️ CRIANDO PLANO DE TREINO: {plan_name} para {phone_number}")
         print(f"📊 Dados recebidos: {weekly_workouts}")
@@ -1321,7 +1321,7 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
         print(f"👤 User ID: {user_id}")
         
         # Desativa planos existentes
-        supabase.table('user_workout_plans').update({'is_active': False}).eq('user_id', user_id).execute()
+        supabase.table('training_plans').update({'is_active': False}).eq('user_id', user_id).execute()
         
         # Cria novo plano
         plan_data = {
@@ -1333,126 +1333,62 @@ def create_weekly_workout_plan(phone_number: str, plan_name: str, objective: str
             'is_active': True
         }
         
-        plan_result = supabase.table('user_workout_plans').insert(plan_data).execute()
+        plan_result = supabase.table('training_plans').insert(plan_data).execute()
         if not plan_result.data:
             return {"error": "Erro ao criar plano de treino"}
         
         plan_id = plan_result.data[0]['id']
         print(f"📋 Plano criado: {plan_id}")
         
-        # Verifica se a estrutura é do fallback (com 'days') ou estrutura antiga
+        # BUSCA TEMPLATES EXISTENTES (SIMPLIFICADO!)
+        templates_result = supabase.table('workout_templates').select('id, name').execute()
+        if not templates_result.data:
+            return {"error": "Nenhum template de treino encontrado"}
+        
+        available_templates = {t['name']: t['id'] for t in templates_result.data}
+        print(f"🎯 Templates disponíveis: {list(available_templates.keys())}")
+        
+        # Liga templates aos dias da semana (ESTRUTURA SIMPLES)
         workout_count = 0
         days_list = weekly_workouts.get('days', [])
         
         if days_list:
-            # Nova estrutura com array de days
             print(f"📅 Processando {len(days_list)} dias de treino")
             
             for day_info in days_list:
-                day_of_week = day_info.get('day_of_week')  # 1-7
-                workout_name = day_info.get('workout_name')
-                exercises = day_info.get('exercises', [])
+                day_of_week = day_info.get('day_of_week')  # 1-7 (correto!)
+                workout_name = day_info.get('workout_name', 'Full Body Iniciante')
                 
-                if not exercises:
-                    continue
-                
-                # Mapeia número do dia para nome
-                day_names = {
-                    1: 'segunda-feira',
-                    2: 'terça-feira', 
-                    3: 'quarta-feira',
-                    4: 'quinta-feira',
-                    5: 'sexta-feira',
-                    6: 'sábado',
-                    7: 'domingo'
-                }
-                
-                day_name = day_names.get(day_of_week, 'segunda-feira')
-                
-                # Cria o treino
-                workout_data = {
-                    'user_workout_plan_id': plan_id,
-                    'day_of_week': day_name,
-                    'workout_name': workout_name,
-                    'workout_type': 'Strength',
-                    'estimated_duration': 60,
-                    'display_order': 1
-                }
-                
-                print(f"🏋️ Criando treino: {workout_name} para {day_name}")
-                workout_result = supabase.table('plan_workouts').insert(workout_data).execute()
-                
-                if workout_result.data:
-                    workout_id = workout_result.data[0]['id']
-                    print(f"✅ Treino criado: {workout_id}")
-                    
-                    # Adiciona exercícios do treino
-                    for i, exercise in enumerate(exercises, 1):
-                        exercise_name = exercise.get('exercise_name')
-                        
-                        # Busca ID do exercício no banco
-                        exercise_search = supabase.table('exercises').select('id').ilike('name', exercise_name).execute()
-                        
-                        if exercise_search.data:
-                            exercise_id = exercise_search.data[0]['id']
-                            
-                            exercise_data = {
-                                'plan_workout_id': workout_id,
-                                'exercise_id': exercise_id,
-                                'sets': exercise.get('sets', 3),
-                                'reps': exercise.get('reps', '10-12'),
-                                'rest_seconds': exercise.get('rest_seconds', 60),
-                                'weight_kg': 0,
-                                'notes': f"Exercício {i} do {workout_name}",
-                                'display_order': i
-                            }
-                            
-                            exercise_insert_result = supabase.table('workout_exercises').insert(exercise_data).execute()
-                            if exercise_insert_result.data:
-                                print(f"✅ Exercício adicionado: {exercise_name}")
-                            else:
-                                print(f"❌ Erro ao adicionar exercício: {exercise_name}")
-                        else:
-                            print(f"⚠️ Exercício não encontrado no banco: {exercise_name}")
+                # Mapeia nome do treino para template existente (estratégia simples)
+                template_id = None
+                if 'peito' in workout_name.lower() or 'triceps' in workout_name.lower():
+                    template_id = available_templates.get('Treino A - Peito e Tríceps')
+                elif 'costas' in workout_name.lower() or 'biceps' in workout_name.lower():
+                    template_id = available_templates.get('Treino B - Costas e Bíceps')
+                elif 'pernas' in workout_name.lower() or 'core' in workout_name.lower():
+                    template_id = available_templates.get('Treino C - Pernas e Core')
                 else:
-                    print(f"❌ Erro ao criar treino: {workout_name}")
-                    
-                workout_count += 1
-        else:
-            # Estrutura antiga (compatibilidade)
-            for day, workouts in weekly_workouts.items():
-                if not workouts or day == 'days':
-                    continue
-                    
-                for workout in workouts:
-                    workout_data = {
-                        'user_workout_plan_id': plan_id,
-                        'day_of_week': day,
-                        'workout_name': workout['name'],
-                        'workout_type': workout.get('type', 'Strength'),
-                        'estimated_duration': workout.get('duration', 60),
-                        'display_order': workout.get('order', 1)
+                    # Fallback para template genérico
+                    template_id = available_templates.get('Full Body Iniciante')
+                
+                if template_id:
+                    # INSERE NA ESTRUTURA CORRETA!
+                    plan_workout_data = {
+                        'training_plan_id': plan_id,        # CORRETO: plano principal
+                        'workout_template_id': template_id,  # CORRETO: template existente  
+                        'day_of_week': day_of_week          # CORRETO: 1-7 (smallint)
                     }
                     
-                    workout_result = supabase.table('plan_workouts').insert(workout_data).execute()
-                    if workout_result.data:
-                        workout_id = workout_result.data[0]['id']
-                        
-                        for exercise in workout.get('exercises', []):
-                            exercise_data = {
-                                'plan_workout_id': workout_id,
-                                'exercise_id': exercise['exercise_id'],
-                                'sets': exercise.get('sets', 3),
-                                'reps': exercise.get('reps', '10-12'),
-                                'rest_seconds': exercise.get('rest', 60),
-                                'weight_kg': exercise.get('weight', 0),
-                                'notes': exercise.get('notes', ''),
-                                'display_order': exercise.get('order', 1)
-                            }
-                            
-                            supabase.table('workout_exercises').insert(exercise_data).execute()
+                    print(f"🏋️ Ligando template '{workout_name}' ao dia {day_of_week}")
+                    plan_workout_result = supabase.table('plan_workouts').insert(plan_workout_data).execute()
                     
-                    workout_count += 1
+                    if plan_workout_result.data:
+                        workout_count += 1
+                        print(f"✅ Treino ligado com sucesso!")
+                    else:
+                        print(f"❌ Erro ao ligar template ao plano")
+                else:
+                    print(f"⚠️ Template não encontrado para: {workout_name}")
         
         print(f"🎯 PLANO CRIADO: {workout_count} treinos adicionados")
         
@@ -2533,7 +2469,8 @@ def execute_immediate_action(user_message: str, phone_number: str, user_context)
             if create_result and create_result.get('success'):
                 return f"🎉 Perfeito! Acabei de criar e salvar seu plano de treino personalizado!\n\n✅ **{create_result.get('plan_name', 'Plano Personalizado')}**\n🎯 Objetivo: {create_result.get('objective', 'Condicionamento Geral')}\n📅 Duração: {create_result.get('duration', '30 dias')}\n\nSeu plano já está ativo e você pode começar hoje mesmo! Quer saber quais são os treinos de hoje?"
             else:
-                return f"❌ Houve um problema ao criar seu plano de treino: {create_result.get('error', 'Erro desconhecido')}\n\nVou investigar e tentar novamente. Por favor, me diga mais sobre seus objetivos de treino!"
+                # NUNCA mostra erro técnico - mensagem sutil e humana
+                return f"😅 Estou com algumas dificuldades técnicas no momento para organizar seu plano.\n\nEnquanto isso, que tal me contar mais sobre seus objetivos? Quer focar em ganhar força, definição muscular ou melhorar o condicionamento?\n\nAssim que tudo normalizar, vou criar o plano perfeito para você! 💪"
         
         elif any(word in message_lower for word in ["plano", "alimentar", "nutricao", "nutrição", "meal", "nutrition", "dieta"]):
             # Ação de nutrição necessária
@@ -2557,7 +2494,8 @@ def execute_immediate_action(user_message: str, phone_number: str, user_context)
             if create_result and create_result.get('success'):
                 return f"🎉 Perfeito! Acabei de criar e salvar seu plano alimentar personalizado!\n\n✅ **{create_result.get('plan_name', 'Plano Personalizado')}**\n📅 Duração: 7 dias\n\nSeu plano já está ativo! Quer saber quais são as refeições de hoje?"
             else:
-                return f"❌ Houve um problema ao criar seu plano alimentar: {create_result.get('error', 'Erro desconhecido')}\n\nVou investigar e tentar novamente. Por favor, me conte mais sobre seus objetivos nutricionais!"
+                # NUNCA mostra erro técnico - mensagem sutil e humana
+                return f"😅 Estou com algumas dificuldades técnicas no momento para montar seu cardápio.\n\nEnquanto isso, que tal me contar sobre suas preferências alimentares? Tem alguma restrição ou alimento favorito?\n\nAssim que tudo normalizar, vou preparar um plano alimentar incrível para você! 🥗"
         
         # Se não conseguiu identificar a ação específica
         return None
