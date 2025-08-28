@@ -1512,13 +1512,76 @@ def get_user_workout_plan_details(phone_number: str):
             )
         ''').eq('training_plan_id', plan['id']).order('day_of_week').execute()
         
+        # CALCULA PRÓXIMO TREINO BASEADO NO DIA ATUAL
+        # Busca timezone do usuário
+        user_id = user_result.data[0]['id']
+        onboarding_result = supabase.table('users').select('onboarding').eq('id', user_id).execute()
+        
+        timezone_offset = -3  # Default Brasil
+        if onboarding_result.data and onboarding_result.data[0].get('onboarding'):
+            timezone_offset = onboarding_result.data[0]['onboarding'].get('timezone_offset', -3)
+        
+        # Calcula dia atual no timezone do usuário
+        from datetime import datetime, timedelta
+        current_time = datetime.utcnow() + timedelta(hours=timezone_offset)
+        current_weekday = current_time.weekday()  # 0=segunda, 1=terça, 2=quarta, 3=quinta, 4=sexta, 5=sábado, 6=domingo
+        
+        # Mapeia número para texto
+        days_map = {
+            0: "segunda-feira",
+            1: "terça-feira", 
+            2: "quarta-feira",
+            3: "quinta-feira",
+            4: "sexta-feira",
+            5: "sábado",
+            6: "domingo"
+        }
+        
+        current_day_name = days_map[current_weekday]
+        
+        # Encontra próximo treino
+        next_workout = None
+        next_workout_day = None
+        days_until_next = None
+        
+        # Primeiro verifica se hoje tem treino
+        for workout in workouts_result.data:
+            if workout['day_of_week'] == current_day_name:
+                next_workout = workout
+                next_workout_day = "hoje"
+                days_until_next = 0
+                break
+        
+        # Se hoje não tem, procura os próximos dias
+        if not next_workout:
+            for days_ahead in range(1, 8):  # Próximos 7 dias
+                target_weekday = (current_weekday + days_ahead) % 7
+                target_day_name = days_map[target_weekday]
+                
+                for workout in workouts_result.data:
+                    if workout['day_of_week'] == target_day_name:
+                        next_workout = workout
+                        if days_ahead == 1:
+                            next_workout_day = "amanhã"
+                        else:
+                            next_workout_day = target_day_name
+                        days_until_next = days_ahead
+                        break
+                
+                if next_workout:
+                    break
+        
         return {
             "success": True,
             "plan_details": plan,
             "workouts": workouts_result.data,
             "total_workouts": len(workouts_result.data),
             "plan_name": plan['name'],
-            "objective": plan['objective']
+            "objective": plan['objective'],
+            "current_day": current_day_name,
+            "next_workout": next_workout,
+            "next_workout_day": next_workout_day,
+            "days_until_next": days_until_next
         }
         
     except Exception as e:
