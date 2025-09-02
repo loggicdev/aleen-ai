@@ -4475,36 +4475,117 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     user_id = user_result.data[0]['id']
                     print(f"📋 User ID encontrado: {user_id}")
                     
-                    # Verificar se tem assinatura ativa
+                    # Verificar todas as assinaturas do usuário
                     subscription_result = supabase.table('subscriptions')\
-                        .select('status, trial_end')\
+                        .select('status, trial_end, current_period_end')\
                         .eq('user_id', user_id)\
-                        .in_('status', ['active', 'trialing'])\
                         .order('created_at', desc=True)\
                         .limit(1)\
                         .execute()
                     
                     if subscription_result.data and len(subscription_result.data) > 0:
                         subscription = subscription_result.data[0]
-                        print(f"✅ Assinatura ativa encontrada: status={subscription['status']}")
+                        status = subscription['status']
+                        print(f"📊 Assinatura encontrada: status={status}")
                         
-                        # Se está em trial, verificar se não expirou
-                        if subscription['status'] == 'trialing' and subscription.get('trial_end'):
-                            from datetime import datetime
-                            trial_end = datetime.fromisoformat(subscription['trial_end'].replace('Z', '+00:00'))
-                            if datetime.now(trial_end.tzinfo) > trial_end:
-                                print(f"⏰ Trial expirado para usuário {user_id}")
-                                return WhatsAppMessageResponse(
-                                    response="🚫 Seu período de teste expirou! Para continuar usando a Aleen IA, você precisa ativar sua assinatura.\n\n💳 Clique aqui para assinar: [LINK_CHECKOUT]\n\n✨ Plano Premium: R$ 9,99/mês",
-                                    agent_used="subscription_required",
-                                    conversation_context="trial_expired",
-                                    whatsapp_sent=False,
-                                    messages_sent=1
-                                )
+                        # Status que permitem acesso
+                        if status in ['active', 'trialing']:
+                            # Se está em trial, verificar se não expirou
+                            if status == 'trialing' and subscription.get('trial_end'):
+                                from datetime import datetime
+                                trial_end = datetime.fromisoformat(subscription['trial_end'].replace('Z', '+00:00'))
+                                if datetime.now(trial_end.tzinfo) > trial_end:
+                                    print(f"⏰ Trial expirado para usuário {user_id}")
+                                    
+                                    # Buscar email do usuário para checkout
+                                    user_data = supabase.table('users')\
+                                        .select('email, name')\
+                                        .eq('id', user_id)\
+                                        .single()\
+                                        .execute()
+                                    
+                                    user_email = user_data.data.get('email', '') if user_data.data else ''
+                                    
+                                    # Criar checkout link
+                                    try:
+                                        from src.services.quick_checkout import create_quick_checkout_for_user, get_subscription_pricing_text
+                                        checkout_url = await create_quick_checkout_for_user(user_id, user_email)
+                                        pricing_text = get_subscription_pricing_text()
+                                    except Exception as checkout_error:
+                                        print(f"❌ Erro criando checkout: {checkout_error}")
+                                        checkout_url = "https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss"
+                                        pricing_text = "✨ Plano Premium: R$ 9,99/mês"
+                                    
+                                    return WhatsAppMessageResponse(
+                                        response=f"🚫 **Seu período de teste de 14 dias expirou!**\n\nPara continuar usando a Aleen IA:\n\n{pricing_text}\n\n💳 **Assine agora:** {checkout_url}",
+                                        agent_used="subscription_required",
+                                        conversation_context="trial_expired",
+                                        whatsapp_sent=False,
+                                        messages_sent=1
+                                    )
+                            
+                            print(f"✅ Acesso liberado: status={status}")
+                            # Continua fluxo normal
+                        
+                        # Status que bloqueiam acesso
+                        elif status in ['past_due', 'canceled', 'unpaid']:
+                            print(f"🚫 Acesso bloqueado: status={status}")
+                            
+                            # Buscar email do usuário para checkout
+                            user_data = supabase.table('users')\
+                                .select('email, name')\
+                                .eq('id', user_id)\
+                                .single()\
+                                .execute()
+                            
+                            user_email = user_data.data.get('email', '') if user_data.data else ''
+                            
+                            # Criar checkout link real
+                            try:
+                                from src.services.quick_checkout import create_quick_checkout_for_user, get_subscription_pricing_text
+                                checkout_url = await create_quick_checkout_for_user(user_id, user_email)
+                                pricing_text = get_subscription_pricing_text()
+                            except Exception as checkout_error:
+                                print(f"❌ Erro criando checkout: {checkout_error}")
+                                checkout_url = "https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss"
+                                pricing_text = "✨ Plano Premium: R$ 9,99/mês"
+                            
+                            if status == 'past_due':
+                                message = f"🚫 **Seu período de teste expirou!**\n\nPara continuar usando a Aleen IA:\n\n{pricing_text}\n\n💳 **Assine agora:** {checkout_url}"
+                            else:
+                                message = f"🚫 **Sua assinatura está {status}.**\n\nPara reativar o acesso:\n\n{pricing_text}\n\n💳 **Reativar:** {checkout_url}"
+                            
+                            return WhatsAppMessageResponse(
+                                response=message,
+                                agent_used="subscription_required",
+                                conversation_context=f"subscription_{status}",
+                                whatsapp_sent=False,
+                                messages_sent=1
+                            )
                     else:
-                        print(f"🚫 Nenhuma assinatura ativa encontrada para usuário {user_id}")
+                        print(f"🚫 Nenhuma assinatura encontrada para usuário {user_id}")
+                        
+                        # Buscar email do usuário para checkout
+                        user_data = supabase.table('users')\
+                            .select('email, name')\
+                            .eq('id', user_id)\
+                            .single()\
+                            .execute()
+                        
+                        user_email = user_data.data.get('email', '') if user_data.data else ''
+                        
+                        # Criar checkout link
+                        try:
+                            from src.services.quick_checkout import create_quick_checkout_for_user, get_subscription_pricing_text
+                            checkout_url = await create_quick_checkout_for_user(user_id, user_email)
+                            pricing_text = get_subscription_pricing_text()
+                        except Exception as checkout_error:
+                            print(f"❌ Erro criando checkout: {checkout_error}")
+                            checkout_url = "https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss"
+                            pricing_text = "✨ Plano Premium: R$ 9,99/mês - 14 dias grátis"
+                        
                         return WhatsAppMessageResponse(
-                            response="🚫 Para usar a Aleen IA, você precisa de uma assinatura ativa.\n\n🎁 Experimente grátis por 14 dias!\n💳 Clique aqui para começar: [LINK_CHECKOUT]\n\n✨ Plano Premium: R$ 9,99/mês",
+                            response=f"🚫 **Para usar a Aleen IA, você precisa de uma assinatura ativa.**\n\n🎁 **Experimente grátis por 14 dias!**\n\n{pricing_text}\n\n💳 **Começar agora:** {checkout_url}",
                             agent_used="subscription_required", 
                             conversation_context="no_subscription",
                             whatsapp_sent=False,
