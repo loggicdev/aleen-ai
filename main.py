@@ -4460,6 +4460,63 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         else:
             print(f"👤 Nenhum contexto de usuário fornecido")
         
+        # ======= VERIFICAÇÃO DE ASSINATURA =======
+        if user_context and user_context.is_user and user_context.has_account:
+            try:
+                print(f"🔐 Verificando assinatura para usuário {request.user_name}")
+                
+                # Buscar user_id pelo telefone
+                user_result = supabase.table('users')\
+                    .select('id')\
+                    .eq('phone', request.phone_number)\
+                    .execute()
+                
+                if user_result.data and len(user_result.data) > 0:
+                    user_id = user_result.data[0]['id']
+                    print(f"📋 User ID encontrado: {user_id}")
+                    
+                    # Verificar se tem assinatura ativa
+                    subscription_result = supabase.table('subscriptions')\
+                        .select('status, trial_end')\
+                        .eq('user_id', user_id)\
+                        .in_('status', ['active', 'trialing'])\
+                        .order('created_at', desc=True)\
+                        .limit(1)\
+                        .execute()
+                    
+                    if subscription_result.data and len(subscription_result.data) > 0:
+                        subscription = subscription_result.data[0]
+                        print(f"✅ Assinatura ativa encontrada: status={subscription['status']}")
+                        
+                        # Se está em trial, verificar se não expirou
+                        if subscription['status'] == 'trialing' and subscription.get('trial_end'):
+                            from datetime import datetime
+                            trial_end = datetime.fromisoformat(subscription['trial_end'].replace('Z', '+00:00'))
+                            if datetime.now(trial_end.tzinfo) > trial_end:
+                                print(f"⏰ Trial expirado para usuário {user_id}")
+                                return WhatsAppMessageResponse(
+                                    response="🚫 Seu período de teste expirou! Para continuar usando a Aleen IA, você precisa ativar sua assinatura.\n\n💳 Clique aqui para assinar: [LINK_CHECKOUT]\n\n✨ Plano Premium: R$ 9,99/mês",
+                                    agent_used="subscription_required",
+                                    conversation_context="trial_expired",
+                                    whatsapp_sent=False,
+                                    messages_sent=1
+                                )
+                    else:
+                        print(f"🚫 Nenhuma assinatura ativa encontrada para usuário {user_id}")
+                        return WhatsAppMessageResponse(
+                            response="🚫 Para usar a Aleen IA, você precisa de uma assinatura ativa.\n\n🎁 Experimente grátis por 14 dias!\n💳 Clique aqui para começar: [LINK_CHECKOUT]\n\n✨ Plano Premium: R$ 9,99/mês",
+                            agent_used="subscription_required", 
+                            conversation_context="no_subscription",
+                            whatsapp_sent=False,
+                            messages_sent=1
+                        )
+                else:
+                    print(f"❌ Usuário não encontrado no banco para telefone: {request.phone_number}")
+                    
+            except Exception as e:
+                print(f"❌ Erro verificando assinatura: {e}")
+                # Continua normalmente em caso de erro na verificação
+        
         # Determina agente inicial baseado no contexto do usuário
         initial_agent = determine_initial_agent(
             message=request.message,
