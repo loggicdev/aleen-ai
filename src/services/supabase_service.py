@@ -1,58 +1,82 @@
 """
-Supabase Database Service
-Centraliza todas as operações de banco de dados
+Supabase Service
+Gerencia todas as operações com o banco de dados Supabase
 """
-import os
 from supabase import create_client, Client
-from typing import Dict, List, Any, Optional
+import os
+from typing import Dict, Any, Optional
 
 class SupabaseService:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(SupabaseService, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
     def __init__(self):
-        """Initialize Supabase client"""
-        self.url = os.getenv('SUPABASE_URL')
-        self.key = os.getenv('SUPABASE_ANON_KEY')
-        self.client: Client = create_client(self.url, self.key)
+        if not self._initialized:
+            self.client: Client = None
+            self._initialize()
+            self._initialized = True
     
-    def get_user_by_phone(self, phone: str) -> Optional[Dict]:
-        """Get user by phone number"""
+    def _initialize(self):
+        """Inicializa conexão com Supabase"""
         try:
-            result = self.client.table('users').select('*').eq('phone', phone).execute()
-            return result.data[0] if result.data else None
+            print("🔧 [SUPABASE] Inicializando conexão...")
+            
+            url = os.getenv("SUPABASE_URL")
+            key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+            
+            if not url or not key:
+                print("⚠️ [SUPABASE] Variáveis de ambiente não encontradas")
+                print("🔧 [SUPABASE] Necessárias: SUPABASE_URL e (SUPABASE_SERVICE_ROLE_KEY ou SUPABASE_ANON_KEY)")
+                print(f"🔍 [SUPABASE] URL encontrada: {'✅' if url else '❌'}")
+                print(f"🔍 [SUPABASE] SERVICE_ROLE_KEY: {'✅' if os.getenv('SUPABASE_SERVICE_ROLE_KEY') else '❌'}")
+                print(f"🔍 [SUPABASE] ANON_KEY: {'✅' if os.getenv('SUPABASE_ANON_KEY') else '❌'}")
+                self.client = None
+                return
+            
+            print(f"🔗 [SUPABASE] Conectando em: {url[:30]}...")
+            self.client = create_client(url, key)
+            print("✅ [SUPABASE] Conexão estabelecida com sucesso")
+            
         except Exception as e:
-            print(f"Error getting user by phone: {e}")
-            return None
+            print(f"❌ [SUPABASE] Falha na inicialização: {str(e)}")
+            raise
     
-    def get_agents(self) -> List[Dict]:
-        """Get all active agents"""
-        try:
-            result = self.client.table('agents').select('*').execute()
-            return result.data
-        except Exception as e:
-            print(f"Error getting agents: {e}")
-            return []
+    def get_client(self) -> Client:
+        """Retorna cliente Supabase"""
+        if not self.client:
+            self._initialize()
+        return self.client
     
-    def save_memory(self, phone: str, message: str, response: str) -> bool:
-        """Save conversation to memory"""
+    def health_check(self) -> Dict[str, Any]:
+        """Verifica saúde da conexão"""
         try:
-            self.client.table('memory').insert({
-                'phone': phone,
-                'message': message, 
-                'response': response,
-                'timestamp': 'now()'
-            }).execute()
-            return True
+            print("🏥 [SUPABASE] Executando health check...")
+            
+            # Teste simples de conexão
+            result = self.client.table('users').select('id').limit(1).execute()
+            
+            print("✅ [SUPABASE] Health check passou - conexão OK")
+            return {
+                "status": "healthy",
+                "connected": True,
+                "message": "Conexão com Supabase OK",
+                "test_query": "users table accessible"
+            }
         except Exception as e:
-            print(f"Error saving memory: {e}")
-            return False
-    
-    def get_memory(self, phone: str, limit: int = 20) -> List[Dict]:
-        """Get conversation memory"""
-        try:
-            result = self.client.table('memory').select('*').eq('phone', phone).order('timestamp', desc=True).limit(limit).execute()
-            return result.data
-        except Exception as e:
-            print(f"Error getting memory: {e}")
-            return []
+            print(f"❌ [SUPABASE] Health check falhou: {str(e)}")
+            return {
+                "status": "unhealthy", 
+                "connected": False,
+                "error": str(e)
+            }
 
-# Global instance
+# Instância global
 supabase_service = SupabaseService()
+
+# Exporta também a classe para flexibilidade
+__all__ = ['SupabaseService', 'supabase_service']

@@ -25,6 +25,36 @@ load_dotenv()
 
 app = FastAPI(title="Aleen AI Agents", version="1.0.0")
 
+# ====== SUBSCRIPTION SYSTEM INTEGRATION ======
+try:
+    from src.services.subscription_integration import initialize_subscription_system, get_subscription_integration
+    subscription_system = initialize_subscription_system()
+    print("💳 Subscription system initialized")
+    
+    # Make MCP Stripe functions available globally for subscription system
+    def mcp_stripe_create_customer(email: str, name: str):
+        """Wrapper for MCP Stripe create_customer"""
+        try:
+            # Call MCP function directly
+            import subprocess
+            import json
+            
+            # For now, return mock data until MCP is properly connected
+            print(f"🔧 Mock MCP: Creating customer for {email}")
+            return {
+                "id": f"cus_mock_{email[:8]}",
+                "email": email,
+                "name": name
+            }
+        except Exception as e:
+            print(f"❌ Error in MCP create_customer: {e}")
+            return None
+    
+except ImportError as e:
+    subscription_system = None
+    mcp_stripe_create_customer = None
+    print(f"⚠️ Subscription system not available: {e}")
+
 # Redis connection with retry mechanism
 def connect_redis_with_retry(max_retries=10, delay=3):
     for attempt in range(max_retries):
@@ -440,9 +470,10 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
             "temp_password": temp_password,
             "email": email,
             "onboarding_url": f"https://aleen.dp.claudy.host/onboarding/{user_id}",
-            "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen, depois complete seu onboarding no link acima."
+            "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen, depois complete seu onboarding no link acima.",
+            "subscription_created": False  # Will be updated if subscription is created
         }
-        
+    
     except Exception as e:
         print(f"❌ Erro geral ao criar usuário: {e}")
         import traceback
@@ -979,6 +1010,12 @@ AVAILABLE_TOOLS = [
         }
     }
 ]
+
+# ====== ADD SUBSCRIPTION TOOLS ======
+if subscription_system and subscription_system.is_available():
+    subscription_tools = subscription_system.get_subscription_tools()
+    AVAILABLE_TOOLS.extend(subscription_tools)
+    print(f"💳 Added {len(subscription_tools)} subscription tools")
 
 # Implementações das tools para planos de treino
 def check_user_workout_plan(phone_number: str):
@@ -3258,13 +3295,42 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
                 "message": "Telefone não fornecido no contexto da conversa",
                 "user_id": None
             }
-            
-        return create_user_and_save_onboarding(
+        
+        # 1. Create user first
+        user_result = create_user_and_save_onboarding(
             name=arguments.get('name'),
             age=arguments.get('age'), 
             email=arguments.get('email'),
             phone=phone
         )
+        
+        # 2. If user creation successful, try to create subscription
+        if user_result.get("success") and subscription_system and subscription_system.is_available():
+            try:
+                import asyncio
+                print("💳 Creating subscription after successful onboarding...")
+                subscription_result = asyncio.run(subscription_system.create_subscription_after_onboarding(
+                    user_id=user_result["user_id"],
+                    email=user_result["email"],
+                    name=arguments.get('name'),
+                    phone=phone
+                ))
+                
+                if subscription_result.get("success"):
+                    # Update user result with subscription info
+                    user_result["subscription_created"] = True
+                    user_result["trial_end"] = subscription_result.get("trial_end")
+                    user_result["message"] += f"\n\n💳 Assinatura criada! Período de teste de 14 dias iniciado até {subscription_result.get('trial_end', '')[:10]}"
+                    print(f"✅ Subscription created for user {user_result['user_id']}")
+                else:
+                    print(f"⚠️ Failed to create subscription: {subscription_result.get('error')}")
+                    user_result["subscription_created"] = False
+                    
+            except Exception as e:
+                print(f"❌ Error creating subscription after onboarding: {e}")
+                user_result["subscription_created"] = False
+        
+        return user_result
     elif tool_name == "check_user_meal_plan":
         if not context_phone:
             return {"error": "Telefone não disponível no contexto"}
@@ -3416,6 +3482,65 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
             phone_number=context_phone,
             period_days=arguments.get('period_days', 30)
         )
+    
+    # ====== SUBSCRIPTION TOOLS ======
+    elif tool_name == "create_user_subscription":
+        if subscription_system and subscription_system.is_available():
+            try:
+                import asyncio
+                # Get user ID from phone context
+                user_result = supabase.table('users').select('id').eq('phone', context_phone).execute()
+                if user_result.data:
+                    user_id = user_result.data[0]['id']
+                    result = asyncio.run(subscription_system.create_subscription_after_onboarding(
+                        user_id=user_id,
+                        email=arguments.get('email'),
+                        name=arguments.get('name'),
+                        phone=context_phone
+                    ))
+                    return result
+                else:
+                    return {"error": "Usuário não encontrado"}
+            except Exception as e:
+                print(f"❌ Error in create_user_subscription tool: {e}")
+                return {"error": f"Erro ao criar assinatura: {str(e)}"}
+        else:
+            return {"message": "Sistema de assinaturas não disponível"}
+    
+    elif tool_name == "check_user_subscription_access":
+        if subscription_system and subscription_system.is_available():
+            try:
+                import asyncio
+                # Get user ID from phone context or arguments
+                user_id = arguments.get('user_id')
+                if not user_id and context_phone:
+                    user_result = supabase.table('users').select('id').eq('phone', context_phone).execute()
+                    if user_result.data:
+                        user_id = user_result.data[0]['id']
+                
+                if user_id:
+                    result = asyncio.run(subscription_system.check_access_before_tools(user_id))
+                    return result
+                else:
+                    return {"error": "User ID não encontrado"}
+            except Exception as e:
+                print(f"❌ Error in check_user_subscription_access tool: {e}")
+                return {"error": f"Erro ao verificar assinatura: {str(e)}"}
+        else:
+            return {"has_access": True, "message": "Sistema de assinaturas não disponível"}
+    
+    elif tool_name == "get_available_subscription_plans":
+        if subscription_system and subscription_system.is_available():
+            try:
+                import asyncio
+                from src.tools.product_tools import get_available_subscription_plans
+                result = asyncio.run(get_available_subscription_plans())
+                return result
+            except Exception as e:
+                print(f"❌ Error in get_available_subscription_plans tool: {e}")
+                return {"error": f"Erro ao buscar planos: {str(e)}"}
+        else:
+            return {"message": "Sistema de produtos não disponível"}
     
     else:
         return {"error": f"Tool '{tool_name}' não encontrada"}
@@ -4041,6 +4166,39 @@ async def chat(request: ChatRequest):
     """Processa uma mensagem de chat usando o agente apropriado"""
     
     try:
+        print(f"🔍 Processing chat request for user: {request.user_id}")
+        
+        # ====== VERIFICAÇÃO DE ASSINATURA ======
+        if request.user_id:
+            try:
+                from src.services.access_control_middleware import AccessControlMiddleware
+                from src.services.subscription_checker import SubscriptionChecker
+                from src.services.stripe_checkout_service import StripeCheckoutService
+                from src.services.subscription_service import SubscriptionService
+                from src.services.stripe_service import StripeService
+                from src.services.supabase_service import supabase_service
+                
+                # Inicializar middleware de controle de acesso
+                checker = SubscriptionChecker(supabase_service)
+                stripe_service = StripeService()
+                subscription_service = SubscriptionService(stripe_service)
+                checkout_service = StripeCheckoutService(stripe_service, subscription_service)
+                access_control = AccessControlMiddleware(checker, checkout_service)
+                
+                # Verificar acesso do usuário
+                print(f"🛡️ Checking subscription access for user: {request.user_id}")
+                await access_control.require_active_subscription(request.user_id)
+                print(f"✅ Subscription access granted for user: {request.user_id}")
+                
+            except HTTPException as subscription_error:
+                print(f"🚫 Subscription access denied for user {request.user_id}: {subscription_error.detail}")
+                # Re-raise para retornar erro de assinatura
+                raise subscription_error
+            except Exception as e:
+                print(f"⚠️ Error checking subscription for user {request.user_id}: {e}")
+                # Continue sem bloquear se houver erro no sistema de assinatura
+                print("⚠️ Continuing without subscription check due to system error")
+        
         # Verifica se há agentes carregados
         if not agents_cache:
             print("⚠️ Nenhum agente carregado, tentando recarregar...")
@@ -4412,8 +4570,44 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                         function_args.pop('phone', None)
                         print(f"📞 Usando telefone do contexto: {request.phone_number}")
                     
-                    # Executa a tool passando o contexto do telefone
-                    tool_result = execute_tool(function_name, function_args, request.phone_number)
+                    # ====== SUBSCRIPTION ACCESS CHECK ======
+                    # Tools que requerem assinatura ativa (exceto onboarding e subscription tools)
+                    premium_tools = [
+                        "create_weekly_meal_plan", "create_weekly_training_plan", 
+                        "get_user_meal_plan_details", "get_user_workout_plan_details",
+                        "update_meal_in_plan", "update_workout_exercise", "record_workout_session"
+                    ]
+                    
+                    if function_name in premium_tools and subscription_system and subscription_system.is_available():
+                        try:
+                            import asyncio
+                            # Get user ID from phone
+                            user_result = supabase.table('users').select('id').eq('phone', request.phone_number).execute()
+                            if user_result.data:
+                                user_id = user_result.data[0]['id']
+                                access_check = asyncio.run(subscription_system.check_access_before_tools(user_id))
+                                
+                                if not access_check.get("has_access", False):
+                                    # Replace tool execution with access denied message
+                                    tool_result = {
+                                        "access_denied": True,
+                                        "message": access_check.get("denial_message", "Acesso negado - assinatura necessária"),
+                                        "subscription_required": True
+                                    }
+                                    print(f"🚫 Access denied for tool {function_name} - user {user_id}")
+                                else:
+                                    # Execute tool normally
+                                    tool_result = execute_tool(function_name, function_args, request.phone_number)
+                            else:
+                                # User not found, execute tool normally (might be lead)
+                                tool_result = execute_tool(function_name, function_args, request.phone_number)
+                        except Exception as e:
+                            print(f"❌ Error checking subscription access: {e}")
+                            # Default to executing tool to not break functionality
+                            tool_result = execute_tool(function_name, function_args, request.phone_number)
+                    else:
+                        # Execute tool normally (no subscription check needed)
+                        tool_result = execute_tool(function_name, function_args, request.phone_number)
                     
                     # Adiciona o resultado da tool às mensagens
                     messages.append({
@@ -4873,6 +5067,124 @@ async def get_user_memory_endpoint(phone_number: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao recuperar memória: {str(e)}")
 
+# ====== SUBSCRIPTION ENDPOINTS ======
+
+@app.get("/subscription/check/{user_id}")
+async def check_subscription_status(user_id: str):
+    """Verifica status da assinatura do usuário"""
+    try:
+        # Importar serviços de assinatura
+        from src.services.subscription_checker import SubscriptionChecker
+        from src.services.supabase_service import supabase_service
+        
+        checker = SubscriptionChecker(supabase_service)
+        result = await checker.check_user_subscription_access(user_id)
+        
+        return {
+            "user_id": user_id,
+            "check_timestamp": datetime.now().isoformat(),
+            **result
+        }
+        
+    except Exception as e:
+        print(f"❌ Error checking subscription: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao verificar assinatura: {str(e)}")
+
+@app.post("/subscription/create-checkout")
+async def create_subscription_checkout(request: dict):
+    """Cria checkout do Stripe para nova assinatura"""
+    try:
+        user_id = request.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id é obrigatório")
+        
+        # Importar serviços necessários
+        from src.services.subscription_checker import SubscriptionChecker
+        from src.services.stripe_checkout_service import StripeCheckoutService
+        from src.services.subscription_service import SubscriptionService
+        from src.services.stripe_service import StripeService
+        from src.services.supabase_service import supabase_service
+        
+        # Inicializar serviços
+        checker = SubscriptionChecker(supabase_service)
+        stripe_service = StripeService()
+        subscription_service = SubscriptionService(stripe_service)
+        checkout_service = StripeCheckoutService(stripe_service, subscription_service)
+        
+        # Verificar perfil do usuário
+        user_profile = await checker.get_user_profile_for_subscription(user_id)
+        
+        if user_profile.get("error"):
+            if "missing_fields" in user_profile:
+                return {
+                    "error": "user_profile_incomplete",
+                    "message": "Perfil do usuário incompleto",
+                    "missing_fields": user_profile["missing_fields"],
+                    "current_data": user_profile.get("user_data"),
+                    "required_fields": ["email", "name"]
+                }
+            raise HTTPException(status_code=400, detail=user_profile["error"])
+        
+        user_data = user_profile["user_data"]
+        
+        # Criar checkout
+        checkout_result = await checkout_service.create_subscription_checkout(
+            user_id=user_data["id"],
+            user_email=user_data["email"],
+            user_name=user_data["name"]
+        )
+        
+        if checkout_result.get("error"):
+            raise HTTPException(status_code=500, detail=checkout_result["error"])
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "checkout_url": checkout_result["checkout_url"],
+            "plan_info": checkout_result.get("plan_info"),
+            "message": checkout_result.get("message")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error creating checkout: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao criar checkout: {str(e)}")
+
+@app.get("/subscription/success")
+async def subscription_success(session_id: str):
+    """Processa sucesso do checkout do Stripe"""
+    try:
+        from src.services.stripe_checkout_service import StripeCheckoutService
+        from src.services.subscription_service import SubscriptionService
+        from src.services.stripe_service import StripeService
+        
+        stripe_service = StripeService()
+        subscription_service = SubscriptionService(stripe_service)
+        checkout_service = StripeCheckoutService(stripe_service, subscription_service)
+        
+        result = await checkout_service.handle_checkout_success(session_id)
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "message": "Assinatura ativada com sucesso!",
+            "redirect_url": "/dashboard"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error processing checkout success: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao processar pagamento: {str(e)}")
+
+@app.get("/subscription/cancel")
+async def subscription_cancel():
+    """Processa cancelamento do checkout"""
+    return {
+        "success": True,
+        "message": "Checkout cancelado",
+        "redirect_url": "/pricing"
+    }
+
 @app.post("/test-user-context")
 async def test_user_context(request: WhatsAppMessageRequest):
     """Endpoint de teste para validar UserContext e seleção de agentes"""
@@ -4981,6 +5293,10 @@ async def reload_agents():
             "agents_loaded": len(agents_cache)
         }
 
+# ====== SETUP SUBSCRIPTION ROUTES ======
+if subscription_system and subscription_system.is_available():
+    subscription_system.setup_routes(app)
+    print("💳 Subscription routes registered")
 
 if __name__ == "__main__":
     import uvicorn
