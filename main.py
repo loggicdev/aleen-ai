@@ -8,7 +8,7 @@ import secrets
 import string
 import traceback
 from datetime import datetime, timedelta
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from openai import OpenAI
 from agents import Agent, Runner
@@ -1126,6 +1126,20 @@ if subscription_system and subscription_system.is_available():
     subscription_tools = subscription_system.get_subscription_tools()
     AVAILABLE_TOOLS.extend(subscription_tools)
     print(f"💳 Added {len(subscription_tools)} subscription tools")
+
+# ====== ADD TRIAL TOOLS ======
+try:
+    from src.tools.trial_tools import get_trial_tools
+    trial_tools = get_trial_tools()
+    # Converter para formato OpenAI
+    for tool in trial_tools:
+        AVAILABLE_TOOLS.append({
+            "type": "function",
+            "function": tool
+        })
+    print(f"🎁 Added {len(trial_tools)} trial management tools")
+except Exception as e:
+    print(f"⚠️ Could not load trial tools: {e}")
 
 # Implementações das tools para planos de treino
 def check_user_workout_plan(phone_number: str):
@@ -3652,6 +3666,50 @@ def execute_tool(tool_name: str, arguments: dict, context_phone: str = None):
         else:
             return {"message": "Sistema de produtos não disponível"}
     
+    # ====== TRIAL TOOLS ======
+    elif tool_name == "check_user_trial_status":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        
+        try:
+            # Get user ID from phone
+            user_result = supabase.table('users').select('id').eq('phone', context_phone).execute()
+            if not user_result.data:
+                return {"error": "Usuário não encontrado"}
+            
+            user_id = user_result.data[0]['id']
+            
+            from src.tools.trial_tools import tool_check_trial_status
+            result = tool_check_trial_status(user_id)
+            return {"message": result}
+        except Exception as e:
+            print(f"❌ Error in check_user_trial_status tool: {e}")
+            return {"error": f"Erro ao verificar status do trial: {str(e)}"}
+    
+    elif tool_name == "create_trial_checkout":
+        if not context_phone:
+            return {"error": "Telefone não disponível no contexto"}
+        
+        # Verificar se usuário confirmou
+        user_confirmed = arguments.get('user_confirmed', False)
+        if not user_confirmed:
+            return {"error": "Usuário não confirmou que deseja iniciar o trial"}
+        
+        try:
+            # Get user ID from phone
+            user_result = supabase.table('users').select('id').eq('phone', context_phone).execute()
+            if not user_result.data:
+                return {"error": "Usuário não encontrado"}
+            
+            user_id = user_result.data[0]['id']
+            
+            from src.tools.trial_tools import tool_create_trial_checkout
+            result = tool_create_trial_checkout(user_id)
+            return {"message": result}
+        except Exception as e:
+            print(f"❌ Error in create_trial_checkout tool: {e}")
+            return {"error": f"Erro ao criar checkout do trial: {str(e)}"}
+    
     else:
         return {"error": f"Tool '{tool_name}' não encontrada"}
 
@@ -4675,7 +4733,47 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     else:
                         print(f"🚫 Nenhuma assinatura encontrada para usuário {user_id}")
                         
+                        # ====== NOVA LÓGICA: IA DECIDE QUANDO CRIAR CHECKOUT ======
+                        # Não criar automaticamente, deixar IA processar e decidir
+                        
                         # Verificar se onboarding foi completado
+                        user_data = supabase.table('users')\
+                            .select('email, name, onboarding, stripe_customer_id')\
+                            .eq('id', user_id)\
+                            .single()\
+                            .execute()
+                        
+                        if user_data.data:
+                            onboarding_complete = user_data.data.get('onboarding', False)
+                            
+                            if onboarding_complete:
+                                # Adicionar context sobre falta de assinatura para a IA
+                                user_context["subscription_status"] = "no_subscription"
+                                user_context["needs_trial"] = True
+                                user_context["onboarding_complete"] = True
+                                
+                                print(f"🤖 Usuário sem assinatura mas onboarding completo - deixando IA processar naturalmente")
+                                
+                                # Continuar normalmente para IA processar
+                                # IA usará tools para verificar status e criar checkout se necessário
+                            else:
+                                print(f"⚠️ Onboarding não foi completado")
+                                return WhatsAppMessageResponse(
+                                    response=f"🚫 **Para usar a Aleen IA, você precisa completar seu onboarding primeiro.**\n\n🔗 **Complete aqui:** https://aleen.dp.claudy.host/onboarding/{user_id}\n\n💎 Após completar, você terá 14 dias grátis para testar!",
+                                    agent_used="onboarding_required", 
+                                    conversation_context="incomplete_onboarding",
+                                    whatsapp_sent=False,
+                                    messages_sent=1
+                                )
+                        else:
+                            print(f"❌ Usuário não encontrado no banco para user_id: {user_id}")
+                            return WhatsAppMessageResponse(
+                                response="❌ Erro interno: Usuário não encontrado. Entre em contato com suporte.",
+                                agent_used="user_not_found",
+                                conversation_context="user_not_found_error",
+                                whatsapp_sent=False,
+                                messages_sent=1
+                            )
                         user_data = supabase.table('users')\
                             .select('email, name, onboarding, stripe_customer_id')\
                             .eq('id', user_id)\
@@ -4849,7 +4947,6 @@ Para começar a usar a Aleen IA com *14 dias grátis*, finalize sua assinatura:
 *Após inserir os dados do cartão, você terá 14 dias para testar tudo gratuitamente!*"""
                                             
                                             print(f"✅ Checkout criado: {checkout_url}")
-                                            print(f"💬 Enviando link de checkout para o usuário...")
                                             
                                             return WhatsAppMessageResponse(
                                                 response=message_text,
@@ -5721,6 +5818,51 @@ async def reload_agents():
             "message": f"Erro ao recarregar agentes: {str(e)}",
             "agents_loaded": len(agents_cache)
         }
+
+# ====== STRIPE WEBHOOK ENDPOINT ======
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """
+    Endpoint para receber webhooks do Stripe
+    """
+    try:
+        # Verificar se é uma requisição do Stripe
+        payload = await request.body()
+        sig_header = request.headers.get('stripe-signature')
+        
+        print(f"📨 Webhook recebido do Stripe")
+        print(f"🔍 Signature: {sig_header[:50] if sig_header else 'None'}...")
+        
+        # TODO: Verificar assinatura do webhook
+        # stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+        
+        # Parse do evento
+        import json
+        event = json.loads(payload.decode('utf-8'))
+        event_type = event.get('type')
+        
+        print(f"📋 Evento: {event_type}")
+        
+        # Processar com webhook handler
+        try:
+            from src.services.stripe_webhook_handler import StripeWebhookHandler
+            webhook_handler = StripeWebhookHandler(supabase)
+            result = await webhook_handler.process_webhook_event(event)
+            
+            if result.get("success"):
+                print(f"✅ Webhook processado com sucesso: {event_type}")
+                return {"received": True, "processed": True, "result": result}
+            else:
+                print(f"❌ Erro processando webhook: {result.get('error')}")
+                return {"received": True, "processed": False, "error": result.get('error')}
+                
+        except Exception as handler_error:
+            print(f"❌ Erro no handler do webhook: {handler_error}")
+            return {"received": True, "processed": False, "error": str(handler_error)}
+        
+    except Exception as e:
+        print(f"❌ Erro geral no webhook: {e}")
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
 # ====== SETUP SUBSCRIPTION ROUTES ======
 if subscription_system and subscription_system.is_available():
