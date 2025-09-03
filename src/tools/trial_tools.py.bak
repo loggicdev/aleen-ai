@@ -113,139 +113,29 @@ def check_user_trial_status(user_id: str) -> Dict:
 
 def create_trial_checkout(user_id: str) -> Dict:
     """
-    Cria um checkout do Stripe para trial de 14 dias
-    Baseado na lógica existente mas chamado explicitamente pela IA
+    Cria checkout session para trial após confirmação do usuário
     
     Args:
-        user_id: ID do usuário que solicitou trial
+        user_id: ID do usuário
         
     Returns:
         Dict com resultado:
         - success: bool
-        - checkout_url: str (se success=True)
-        - error: str (se success=False)
+        - checkout_url: str (se sucesso)
         - message: str
+        - error: str (se erro)
     """
     try:
-        supabase = get_supabase_client()
-        if not supabase:
-            return {
-                "success": False,
-                "error": "Serviço de banco não disponível"
-            }
+        supabase_service = get_supabase_service()
+        if not supabase_service:
+            return {"success": False, "error": "Serviço de banco não disponível"}
         
-        # Verificar usuário
-        user_data = supabase.table('users')\
-            .select('email, name, stripe_customer_id')\
-            .eq('id', user_id)\
-            .single()\
+        # Verificar se usuário existe e onboarding completo
+        user_data = supabase_service.table('users')
+            .select('email, name, onboarding, stripe_customer_id')
+            .eq('id', user_id)
+            .single()
             .execute()
-        
-        if not user_data.data:
-            return {
-                "success": False,
-                "error": "Usuário não encontrado"
-            }
-        
-        # Verificar se já tem customer_id
-        customer_id = user_data.data.get('stripe_customer_id')
-        if not customer_id:
-            return {
-                "success": False,
-                "error": "Customer do Stripe não encontrado"
-            }
-        
-        # Buscar price_id ativo
-        price_data = supabase.table('prices')\
-            .select('stripe_price_id')\
-            .eq('is_active', True)\
-            .limit(1)\
-            .execute()
-        
-        if not price_data.data:
-            return {
-                "success": False,
-                "error": "Nenhum preço ativo encontrado"
-            }
-        
-        price_id = price_data.data[0]['stripe_price_id']
-        
-        # Criar checkout session no Stripe
-        stripe_secret = os.getenv("STRIPE_SECRET_KEY")
-        if not stripe_secret:
-            return {
-                "success": False,
-                "error": "Chave do Stripe não configurada"
-            }
-        
-        checkout_result = subprocess.run([
-            'curl', '-X', 'POST', 'https://api.stripe.com/v1/checkout/sessions',
-            '-H', f'Authorization: Bearer {stripe_secret}',
-            '-H', 'Content-Type: application/x-www-form-urlencoded',
-            '-d', 'mode=subscription',
-            '-d', f'customer={customer_id}',
-            '-d', f'line_items[0][price]={price_id}',
-            '-d', 'line_items[0][quantity]=1',
-            '-d', 'subscription_data[trial_period_days]=14',
-            '-d', 'success_url=https://aleen.dp.claudy.host/subscription/success?session_id={CHECKOUT_SESSION_ID}',
-            '-d', 'cancel_url=https://aleen.dp.claudy.host/subscription/cancel',
-            '-d', f'metadata[user_id]={user_id}'
-        ], capture_output=True, text=True)
-        
-        if checkout_result.returncode != 0:
-            return {
-                "success": False,
-                "error": f"Erro na API do Stripe: {checkout_result.stderr}"
-            }
-        
-        try:
-            checkout_data = json.loads(checkout_result.stdout)
-        except json.JSONDecodeError as e:
-            return {
-                "success": False,
-                "error": f"Erro ao processar resposta do Stripe: {str(e)}"
-            }
-        
-        if 'error' in checkout_data:
-            return {
-                "success": False,
-                "error": f"Erro do Stripe: {checkout_data['error']['message']}"
-            }
-        
-        if 'url' not in checkout_data:
-            return {
-                "success": False,
-                "error": "URL de checkout não retornada pelo Stripe"
-            }
-        
-        checkout_url = checkout_data['url']
-        checkout_session_id = checkout_data['id']
-        
-        # Salvar no banco
-        try:
-            supabase.table('checkout_sessions').insert({
-                'user_id': user_id,
-                'stripe_checkout_session_id': checkout_session_id,
-                'checkout_url': checkout_url,
-                'status': 'pending',
-                'expires_at': None,
-                'created_at': 'now()'
-            }).execute()
-        except Exception as db_error:
-            # Log erro mas não falhar - checkout já foi criado
-            print(f"⚠️ Erro ao salvar checkout no banco: {db_error}")
-        
-        return {
-            "success": True,
-            "checkout_url": checkout_url,
-            "message": "Checkout criado com sucesso! 14 dias de trial gratuito."
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Erro interno: {str(e)}"
-        }
 
 # Funções que serão chamadas pela IA
 def tool_check_trial_status(user_id: str) -> str:

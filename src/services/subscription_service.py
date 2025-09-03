@@ -34,7 +34,7 @@ class SubscriptionService:
                 return {"error": "Database not available"}
             
             # Buscar primeiro produto ativo com preço ativo
-            result = self.supabase.table('products')\
+            result = self.supabase.client.table('products')\
                 .select('''
                     id,
                     stripe_product_id,
@@ -167,7 +167,7 @@ class SubscriptionService:
             }
             
             if self.supabase:
-                db_result = self.supabase.table('subscriptions').insert(subscription_data).execute()
+                db_result = self.supabase.client.table('subscriptions').insert(subscription_data).execute()
                 if not db_result.data:
                     print(f"⚠️ Failed to save subscription to database")
                     # Continue anyway, subscription was created in Stripe
@@ -201,7 +201,7 @@ class SubscriptionService:
                 }
             
             # Get subscription from database
-            subscription_result = self.supabase.table('subscriptions')\
+            subscription_result = self.supabase.client.table('subscriptions')\
                 .select('*')\
                 .eq('user_id', user_id)\
                 .order('created_at', desc=True)\
@@ -277,7 +277,7 @@ class SubscriptionService:
                 if 'cancel_at_period_end' in webhook_data:
                     update_data['cancel_at_period_end'] = webhook_data['cancel_at_period_end']
             
-            result = self.supabase.table('subscriptions')\
+            result = self.supabase.client.table('subscriptions')\
                 .update(update_data)\
                 .eq('stripe_subscription_id', stripe_subscription_id)\
                 .execute()

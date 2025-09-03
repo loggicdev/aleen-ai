@@ -132,14 +132,15 @@ class SubscriptionIntegration:
             return {"has_access": True, "denial_message": None}
         
         try:
-            access_result = await check_user_subscription_access_tool(user_id)
+            # Verificar assinatura através do subscription_service
+            access_result = await self.subscription_service.check_user_subscription_status(user_id)
             
             if not access_result.get("has_access", False):
                 return {
                     "has_access": False,
                     "denial_message": access_result.get("message", "Acesso negado")
                 }
-            
+
             return {"has_access": True, "denial_message": None}
             
         except Exception as e:
