@@ -212,7 +212,10 @@ class SubscriptionService:
                 return {
                     "has_access": False,
                     "status": "no_subscription",
-                    "reason": "No subscription found for user"
+                    "reason": "No subscription found for user",
+                    "message": "Para acessar este recurso, você precisa de uma assinatura ativa. Que tal experimentar gratuitamente por 14 dias? Não há cobrança neste período e você pode cancelar a qualquer momento.",
+                    "offer_trial": True,
+                    "trial_available": True
                 }
             
             subscription = subscription_result.data[0]

@@ -136,10 +136,23 @@ class SubscriptionIntegration:
             access_result = await self.subscription_service.check_user_subscription_status(user_id)
             
             if not access_result.get("has_access", False):
-                return {
-                    "has_access": False,
-                    "denial_message": access_result.get("message", "Acesso negado")
-                }
+                # Construir mensagem rica para negação de acesso
+                denial_message = access_result.get("message", "Acesso negado")
+                
+                # Se trial está disponível, incluir informações para a IA
+                if access_result.get("offer_trial", False):
+                    return {
+                        "has_access": False,
+                        "denial_message": denial_message,
+                        "offer_trial": True,
+                        "trial_available": True,
+                        "status": access_result.get("status", "no_subscription")
+                    }
+                else:
+                    return {
+                        "has_access": False,
+                        "denial_message": denial_message
+                    }
 
             return {"has_access": True, "denial_message": None}
             

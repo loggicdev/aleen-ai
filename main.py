@@ -4908,9 +4908,14 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                                     tool_result = {
                                         "access_denied": True,
                                         "message": access_check.get("denial_message", "Acesso negado - assinatura necessária"),
-                                        "subscription_required": True
+                                        "subscription_required": True,
+                                        "offer_trial": access_check.get("offer_trial", False),
+                                        "trial_available": access_check.get("trial_available", False),
+                                        "status": access_check.get("status", "unknown"),
+                                        "ai_instruction": "O usuário tentou acessar um recurso premium mas não tem assinatura. Ofereça o trial de 14 dias de forma conversacional e amigável. Use as ferramentas check_user_trial_status e create_trial_checkout se o usuário aceitar."
                                     }
                                     print(f"🚫 Access denied for tool {function_name} - user {user_id}")
+                                    print(f"💡 Trial offer available: {access_check.get('offer_trial', False)}")
                                 else:
                                     # Execute tool normally
                                     tool_result = execute_tool(function_name, function_args, request.phone_number)
