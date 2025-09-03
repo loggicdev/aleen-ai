@@ -206,8 +206,8 @@ def create_trial_checkout(user_id: str) -> Dict:
             '-d', f'line_items[0][price]={price_id}',
             '-d', 'line_items[0][quantity]=1',
             '-d', 'subscription_data[trial_period_days]=14',
-            '-d', f'success_url=https://aleen.dp.claudy.host/auth/signin?session_id={{CHECKOUT_SESSION_ID}}&success=true',
-            '-d', 'cancel_url=https://aleen.dp.claudy.host/auth/signin?canceled=true',
+            '-d', 'success_url=https://aleen.dp.claudy.host/auth/signin?session_id={CHECKOUT_SESSION_ID}',
+            '-d', 'cancel_url=https://aleen.dp.claudy.host/auth/signin',
             '-d', f'metadata[user_id]={user_id}'
         ], capture_output=True, text=True)
         
