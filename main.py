@@ -4896,12 +4896,12 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     
                     if function_name in premium_tools and subscription_system and subscription_system.is_available():
                         try:
-                            import asyncio
                             # Get user ID from phone
                             user_result = supabase.table('users').select('id').eq('phone', request.phone_number).execute()
                             if user_result.data:
                                 user_id = user_result.data[0]['id']
-                                access_check = asyncio.run(subscription_system.check_access_before_tools(user_id))
+                                # Use await instead of asyncio.run() since we're already in an async context
+                                access_check = await subscription_system.check_access_before_tools(user_id)
                                 
                                 if not access_check.get("has_access", False):
                                     # Replace tool execution with access denied message
