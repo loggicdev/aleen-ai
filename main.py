@@ -4815,35 +4815,22 @@ Complete sua assinatura para começar os *14 dias grátis*:
                                                 print(f"💾 Salvando checkout session no banco...")
                                                 checkout_session_id = checkout_data['id']
                                                 
-                                                # Criar registro de subscription pendente
-                                                subscription_insert = supabase.table('subscriptions').insert({
-                                                    'user_id': user_id,
-                                                    'product_id': None,  # Será preenchido pelo webhook
-                                                    'price_id': None,    # Será preenchido pelo webhook
-                                                    'stripe_subscription_id': None,  # Será preenchido pelo webhook
-                                                    'status': 'checkout_pending',
-                                                    'trial_start': None,
-                                                    'trial_end': None,
-                                                    'current_period_start': None,
-                                                    'current_period_end': None,
-                                                    'cancel_at_period_end': False,
-                                                    'created_at': 'now()',
-                                                    'updated_at': 'now()'
-                                                }).execute()
-                                                
-                                                # Salvar checkout session para referência
+                                                # APENAS salvar checkout session por enquanto
+                                                # Subscription será criada pelo webhook após pagamento
                                                 checkout_insert = supabase.table('checkout_sessions').insert({
                                                     'user_id': user_id,
                                                     'stripe_checkout_session_id': checkout_session_id,
                                                     'checkout_url': checkout_url,
                                                     'status': 'pending',
+                                                    'expires_at': None,  # TODO: pegar do Stripe se necessário
                                                     'created_at': 'now()'
                                                 }).execute()
                                                 
                                                 print(f"✅ Checkout session salvo no banco: {checkout_session_id}")
+                                                print(f"⏳ Subscription será criada após pagamento via webhook")
                                                 
                                             except Exception as db_error:
-                                                print(f"❌ Erro ao salvar no banco: {db_error}")
+                                                print(f"❌ Erro ao salvar checkout no banco: {db_error}")
                                                 # Continuar mesmo com erro no banco
                                             
                                             message_text = f"""🎉 *Parabéns por completar seu onboarding!*
