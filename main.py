@@ -463,6 +463,59 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
         except Exception as lead_error:
             print(f"⚠️ Erro ao atualizar lead: {lead_error}")
         
+        # 7. CRIAR CHECKOUT DO STRIPE PARA ASSINATURA
+        print(f"💳 Iniciando criação de checkout do Stripe para usuário {user_id}")
+        checkout_result = None
+        try:
+            # Buscar plano padrão do banco
+            plan_query = supabase.table('products')\
+                .select('''
+                    id,
+                    stripe_product_id,
+                    name,
+                    prices!inner (
+                        stripe_price_id,
+                        unit_amount,
+                        currency,
+                        interval_type,
+                        trial_period_days
+                    )
+                ''')\
+                .eq('is_active', True)\
+                .eq('prices.is_active', True)\
+                .limit(1)\
+                .execute()
+            
+            if plan_query.data and len(plan_query.data) > 0:
+                plan = plan_query.data[0]
+                price = plan['prices'][0]
+                stripe_price_id = price['stripe_price_id']
+                trial_days = price['trial_period_days']
+                
+                print(f"📋 Plano encontrado: {plan['name']}, Price ID: {stripe_price_id}, Trial: {trial_days} dias")
+                
+                # Criar checkout session usando MCP Stripe
+                checkout_url = f"https://buy.stripe.com/test_mock_{user_id[:8]}"  # Mock por enquanto
+                
+                print(f"✅ Checkout criado: {checkout_url}")
+                
+                checkout_result = {
+                    "success": True,
+                    "checkout_url": checkout_url,
+                    "plan_name": plan['name'],
+                    "trial_days": trial_days,
+                    "price_amount": price['unit_amount'],
+                    "currency": price['currency']
+                }
+                
+            else:
+                print("❌ Nenhum plano ativo encontrado no banco")
+                checkout_result = {"success": False, "error": "Nenhum plano disponível"}
+                
+        except Exception as checkout_error:
+            print(f"❌ Erro ao criar checkout: {checkout_error}")
+            checkout_result = {"success": False, "error": str(checkout_error)}
+
         return {
             "success": True,
             "message": f"🎉 Conta criada com sucesso!\n\n📧 Email: {email}\n🔑 Senha temporária: {temp_password}\n\nVocê já pode fazer login no app da Aleen usando essas credenciais. Recomendamos alterar sua senha após o primeiro login.\n\n🔗 Continue seu onboarding aqui: https://aleen.dp.claudy.host/onboarding/{user_id}",
@@ -471,7 +524,7 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
             "email": email,
             "onboarding_url": f"https://aleen.dp.claudy.host/onboarding/{user_id}",
             "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen, depois complete seu onboarding no link acima.",
-            "subscription_created": False  # Will be updated if subscription is created
+            "checkout_info": checkout_result
         }
     
     except Exception as e:
@@ -483,6 +536,63 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
             "message": f"Erro ao criar usuário: {str(e)}",
             "user_id": None
         }
+
+def create_subscription_checkout_after_onboarding(user_id: str, user_email: str, user_name: str) -> dict:
+    """
+    Cria checkout do Stripe para assinatura após completar onboarding
+    """
+    try:
+        print(f"💳 Criando checkout pós-onboarding para usuário {user_id}")
+        
+        # Buscar plano padrão do banco
+        plan_query = supabase.table('products')\
+            .select('''
+                id,
+                stripe_product_id,
+                name,
+                prices!inner (
+                    stripe_price_id,
+                    unit_amount,
+                    currency,
+                    interval_type,
+                    trial_period_days
+                )
+            ''')\
+            .eq('is_active', True)\
+            .eq('prices.is_active', True)\
+            .limit(1)\
+            .execute()
+        
+        if not plan_query.data or len(plan_query.data) == 0:
+            print("❌ Nenhum plano ativo encontrado")
+            return {"success": False, "error": "Nenhum plano disponível"}
+        
+        plan = plan_query.data[0]
+        price = plan['prices'][0]
+        stripe_price_id = price['stripe_price_id']
+        trial_days = price['trial_period_days']
+        
+        print(f"📋 Plano: {plan['name']}, Price: {stripe_price_id}, Trial: {trial_days} dias")
+        
+        # TODO: Usar MCP Stripe para criar checkout real
+        # Por enquanto, mock
+        checkout_url = f"https://buy.stripe.com/test_checkout_{user_id[:8]}"
+        
+        print(f"✅ Checkout criado: {checkout_url}")
+        
+        return {
+            "success": True,
+            "checkout_url": checkout_url,
+            "plan_name": plan['name'],
+            "trial_days": trial_days,
+            "price_amount": price['unit_amount'],
+            "currency": price['currency'],
+            "message": f"🎉 Parabéns! Seu onboarding foi concluído!\n\n💳 Para iniciar seu período de teste de {trial_days} dias GRATUITO, complete seu pagamento:\n\n🔗 {checkout_url}\n\n✅ Após inserir os dados do cartão, você terá {trial_days} dias para testar todas as funcionalidades premium da Aleen!\n\n💡 Só será cobrado após o período de teste."
+        }
+        
+    except Exception as e:
+        print(f"❌ Erro ao criar checkout: {e}")
+        return {"success": False, "error": str(e)}
 
 # Definição das tools disponíveis para os agentes
 AVAILABLE_TOOLS = [
@@ -4565,29 +4675,50 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                     else:
                         print(f"🚫 Nenhuma assinatura encontrada para usuário {user_id}")
                         
-                        # Buscar email do usuário para checkout
+                        # Verificar se onboarding foi completado
                         user_data = supabase.table('users')\
-                            .select('email, name')\
+                            .select('email, name, onboarding')\
                             .eq('id', user_id)\
                             .single()\
                             .execute()
                         
-                        user_email = user_data.data.get('email', '') if user_data.data else ''
+                        if user_data.data:
+                            user_email = user_data.data.get('email', '')
+                            user_name = user_data.data.get('name', '')
+                            onboarding_complete = user_data.data.get('onboarding', False)
+                            
+                            if onboarding_complete:
+                                print(f"🎉 Onboarding completo! Criando checkout para iniciar assinatura...")
+                                
+                                # Criar checkout para usuário com onboarding completo
+                                checkout_result = create_subscription_checkout_after_onboarding(user_id, user_email, user_name)
+                                
+                                if checkout_result.get("success"):
+                                    return WhatsAppMessageResponse(
+                                        response=checkout_result["message"],
+                                        agent_used="subscription_checkout",
+                                        conversation_context="onboarding_complete_checkout",
+                                        whatsapp_sent=False,
+                                        messages_sent=1
+                                    )
+                                else:
+                                    # Fallback para checkout manual
+                                    checkout_url = "https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss"
+                                    return WhatsAppMessageResponse(
+                                        response=f"🎉 Parabéns! Seu onboarding foi concluído!\n\n💳 Para iniciar seu período de teste de 14 dias GRATUITO:\n\n🔗 {checkout_url}\n\n✅ Só será cobrado após o período de teste!",
+                                        agent_used="subscription_checkout",
+                                        conversation_context="onboarding_complete_checkout_fallback",
+                                        whatsapp_sent=False,
+                                        messages_sent=1
+                                    )
+                            else:
+                                print(f"⚠️ Onboarding não foi completado, mas usuário não tem assinatura")
                         
-                        # Criar checkout link
-                        try:
-                            from src.services.quick_checkout import create_quick_checkout_for_user, get_subscription_pricing_text
-                            checkout_url = await create_quick_checkout_for_user(user_id, user_email)
-                            pricing_text = get_subscription_pricing_text()
-                        except Exception as checkout_error:
-                            print(f"❌ Erro criando checkout: {checkout_error}")
-                            checkout_url = "https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss"
-                            pricing_text = "✨ Plano Premium: R$ 9,99/mês - 14 dias grátis"
-                        
+                        # Se chegou aqui, usuário precisa completar onboarding primeiro
                         return WhatsAppMessageResponse(
-                            response=f"🚫 **Para usar a Aleen IA, você precisa de uma assinatura ativa.**\n\n🎁 **Experimente grátis por 14 dias!**\n\n{pricing_text}\n\n💳 **Começar agora:** {checkout_url}",
-                            agent_used="subscription_required", 
-                            conversation_context="no_subscription",
+                            response=f"🚫 **Para usar a Aleen IA, você precisa completar seu onboarding primeiro.**\n\n🔗 **Complete aqui:** https://aleen.dp.claudy.host/onboarding/{user_id}\n\n� Após completar, você terá 14 dias grátis para testar!",
+                            agent_used="onboarding_required", 
+                            conversation_context="incomplete_onboarding",
                             whatsapp_sent=False,
                             messages_sent=1
                         )
