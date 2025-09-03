@@ -4740,9 +4740,32 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                                             '-d', f'metadata[user_id]={user_id}'
                                         ], capture_output=True, text=True)
                                         
-                                        if checkout_result.returncode == 0:
-                                            checkout_data = json.loads(checkout_result.stdout)
-                                            checkout_url = checkout_data['url']
+                                        print(f"🔧 Checkout API response: {checkout_result.stdout}")
+                                        print(f"🔧 Checkout API stderr: {checkout_result.stderr}")
+                                        print(f"🔧 Return code: {checkout_result.returncode}")
+                                        
+                                        if checkout_result.returncode == 0 and checkout_result.stdout:
+                                            try:
+                                                checkout_data = json.loads(checkout_result.stdout)
+                                                print(f"🔧 Parsed checkout data: {checkout_data}")
+                                                
+                                                if 'url' in checkout_data:
+                                                    checkout_url = checkout_data['url']
+                                                elif 'error' in checkout_data:
+                                                    print(f"❌ Stripe error: {checkout_data['error']}")
+                                                    checkout_url = None
+                                                else:
+                                                    print(f"❌ Unexpected response format: {checkout_data}")
+                                                    checkout_url = None
+                                            except json.JSONDecodeError as e:
+                                                print(f"❌ JSON decode error: {e}")
+                                                print(f"❌ Raw response: {checkout_result.stdout}")
+                                                checkout_url = None
+                                        else:
+                                            print(f"❌ API call failed")
+                                            checkout_url = None
+                                        
+                                        if checkout_url:
                                             
                                             message_text = f"""🎉 *Parabéns por completar seu onboarding!*
 
