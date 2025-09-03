@@ -4,7 +4,7 @@ Processa eventos do Stripe para atualizar assinaturas
 """
 import logging
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timedelta
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -40,7 +40,7 @@ class StripeWebhookHandler:
             
             # Por enquanto, criar com dados básicos
             # Buscar product_id e price_id do banco baseado no plano ativo
-            plan_data = self.supabase.table('prices')\
+            plan_data = self.supabase.client.table('prices')\
                 .select('id, product_id, stripe_price_id, trial_period_days')\
                 .eq('is_active', True)\
                 .limit(1)\
@@ -53,23 +53,28 @@ class StripeWebhookHandler:
             plan = plan_data.data[0]
             
             # Criar registro de subscription
+            now = datetime.utcnow()
+            trial_days = plan.get('trial_period_days', 14)  # Default 14 dias
+            trial_end = now + timedelta(days=trial_days)
+            period_end = trial_end  # O período pago começa após o trial
+            
             subscription_data = {
                 'user_id': user_id,
                 'product_id': plan['product_id'],
                 'price_id': plan['id'],
                 'stripe_subscription_id': subscription_id,
-                'status': 'trialing',  # Assumindo trial de 14 dias
-                'trial_start': datetime.utcnow().isoformat(),
-                'trial_end': None,  # TODO: calcular baseado em trial_period_days
-                'current_period_start': datetime.utcnow().isoformat(),
-                'current_period_end': None,  # TODO: calcular
+                'status': 'trialing',
+                'trial_start': now.isoformat(),
+                'trial_end': trial_end.isoformat(),
+                'current_period_start': now.isoformat(),
+                'current_period_end': period_end.isoformat(),
                 'cancel_at_period_end': False,
-                'created_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
+                'created_at': now.isoformat(),
+                'updated_at': now.isoformat()
             }
             
             # Inserir subscription
-            subscription_result = self.supabase.table('subscriptions')\
+            subscription_result = self.supabase.client.table('subscriptions')\
                 .insert(subscription_data)\
                 .execute()
             
@@ -77,7 +82,7 @@ class StripeWebhookHandler:
                 logger.info(f"✅ Subscription criada: {subscription_id}")
                 
                 # Atualizar checkout session para completed
-                checkout_update = self.supabase.table('checkout_sessions')\
+                checkout_update = self.supabase.client.table('checkout_sessions')\
                     .update({
                         'status': 'completed',
                         'completed_at': datetime.utcnow().isoformat()
@@ -114,7 +119,7 @@ class StripeWebhookHandler:
             logger.info(f"📨 Atualizando subscription: {subscription_id} -> {status}")
             
             # Atualizar no banco
-            update_result = self.supabase.table('subscriptions')\
+            update_result = self.supabase.client.table('subscriptions')\
                 .update({
                     'status': status,
                     'updated_at': datetime.utcnow().isoformat()
