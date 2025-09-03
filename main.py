@@ -4690,38 +4690,20 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                             if onboarding_complete:
                                 print(f"🎉 Onboarding completo! Criando checkout para iniciar assinatura...")
                                 
-                                # Buscar customer_id do usuário
-                                if not user_data.data.get('stripe_customer_id'):
-                                    # Criar customer no Stripe se não existir
-                                    try:
-                                        import subprocess
-                                        customer_result = subprocess.run([
-                                            'curl', '-X', 'POST', 'https://api.stripe.com/v1/customers',
-                                            '-H', f'Authorization: Bearer {os.getenv("STRIPE_SECRET_KEY")}',
-                                            '-H', 'Content-Type: application/x-www-form-urlencoded',
-                                            '-d', f'email={user_email}',
-                                            '-d', f'name={user_name}'
-                                        ], capture_output=True, text=True)
-                                        
-                                        if customer_result.returncode == 0:
-                                            import json
-                                            customer_data = json.loads(customer_result.stdout)
-                                            customer_id = customer_data['id']
-                                            
-                                            # Salvar customer_id no banco
-                                            supabase.table('users').update({
-                                                'stripe_customer_id': customer_id
-                                            }).eq('id', user_id).execute()
-                                            
-                                            print(f"✅ Customer criado: {customer_id}")
-                                        else:
-                                            print(f"❌ Erro ao criar customer: {customer_result.stderr}")
-                                            customer_id = None
-                                    except Exception as e:
-                                        print(f"❌ Erro ao criar customer: {e}")
-                                        customer_id = None
+                                # Buscar customer_id do usuário (já deve existir!)
+                                customer_id = user_data.data.get('stripe_customer_id')
+                                
+                                if customer_id:
+                                    print(f"✅ Customer já existe: {customer_id}")
                                 else:
-                                    customer_id = user_data.data.get('stripe_customer_id')
+                                    print("❌ Customer não encontrado no banco de dados!")
+                                    return WhatsAppMessageResponse(
+                                        response="❌ Erro interno: Customer não encontrado. Entre em contato com suporte.",
+                                        agent_used="subscription_error",
+                                        conversation_context="customer_not_found",
+                                        whatsapp_sent=False,
+                                        messages_sent=1
+                                    )
                                 
                                 # Buscar price_id do banco
                                 try:
@@ -4739,6 +4721,11 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                                 # Criar checkout session no Stripe
                                 if customer_id and price_id:
                                     try:
+                                        import subprocess
+                                        import json
+                                        
+                                        print(f"🔧 Criando checkout para customer {customer_id} com price {price_id}")
+                                        
                                         checkout_result = subprocess.run([
                                             'curl', '-X', 'POST', 'https://api.stripe.com/v1/checkout/sessions',
                                             '-H', f'Authorization: Bearer {os.getenv("STRIPE_SECRET_KEY")}',
