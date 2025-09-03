@@ -4777,6 +4777,206 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                 # Continua normalmente em caso de erro na verificação
         
         # Determina agente inicial baseado no contexto do usuário
+        
+        # Determina agente inicial baseado no contexto do usuário
+        initial_agent = determine_initial_agent(
+                                    existing_checkout = supabase.table('checkout_sessions')\
+                                        .select('checkout_url, stripe_checkout_session_id, status')\
+                                        .eq('user_id', user_id)\
+                                        .eq('status', 'pending')\
+                                        .order('created_at', desc=True)\
+                                        .limit(1)\
+                                        .execute()
+                                    
+                                    if existing_checkout.data and len(existing_checkout.data) > 0:
+                                        existing_url = existing_checkout.data[0]['checkout_url']
+                                        session_id = existing_checkout.data[0]['stripe_checkout_session_id']
+                                        
+                                        print(f"♻️ Checkout pendente encontrado: {session_id}")
+                                        
+                                        message_text = f"""🔄 *Você já tem um checkout pendente!*
+
+Complete sua assinatura para começar os *14 dias grátis*:
+
+🔗 *Link de pagamento:*
+{existing_url}
+
+✅ *Benefícios inclusos:*
+- 14 dias de trial gratuito
+- Planos de nutrição personalizados
+- Treinos específicos para seu objetivo
+- Suporte 24/7 da Aleen
+
+*Após inserir os dados do cartão, você terá 14 dias para testar tudo gratuitamente!*"""
+                                        
+                                        return WhatsAppMessageResponse(
+                                            response=message_text,
+                                            agent_used="subscription_checkout_existing",
+                                            conversation_context="checkout_pending_resend",
+                                            whatsapp_sent=True,
+                                            messages_sent=1
+                                        )
+                                        
+                                except Exception as e:
+                                    print(f"⚠️ Erro ao verificar checkout existente: {e}")
+                                
+                                print(f"🆕 Criando novo checkout...")
+                                
+                                # Buscar customer_id do usuário (já deve existir!)
+                                customer_id = user_data.data.get('stripe_customer_id')
+                                
+                                if customer_id:
+                                    print(f"✅ Customer já existe: {customer_id}")
+                                else:
+                                    print("❌ Customer não encontrado no banco de dados!")
+                                    return WhatsAppMessageResponse(
+                                        response="❌ Erro interno: Customer não encontrado. Entre em contato com suporte.",
+                                        agent_used="subscription_error",
+                                        conversation_context="customer_not_found",
+                                        whatsapp_sent=False,
+                                        messages_sent=1
+                                    )
+                                
+                                # Buscar price_id do banco
+                                try:
+                                    price_data = supabase.table('prices').select('stripe_price_id').eq('is_active', True).limit(1).execute()
+                                    if price_data.data:
+                                        price_id = price_data.data[0]['stripe_price_id']
+                                        print(f"💰 Price ID: {price_id}")
+                                    else:
+                                        print("❌ Nenhum preço ativo encontrado")
+                                        price_id = None
+                                except Exception as e:
+                                    print(f"❌ Erro ao buscar price: {e}")
+                                    price_id = None
+                                
+                                # Criar checkout session no Stripe
+                                if customer_id and price_id:
+                                    try:
+                                        import subprocess
+                                        import json
+                                        
+                                        print(f"🔧 Criando checkout para customer {customer_id} com price {price_id}")
+                                        
+                                        checkout_result = subprocess.run([
+                                            'curl', '-X', 'POST', 'https://api.stripe.com/v1/checkout/sessions',
+                                            '-H', f'Authorization: Bearer {os.getenv("STRIPE_SECRET_KEY")}',
+                                            '-H', 'Content-Type: application/x-www-form-urlencoded',
+                                            '-d', 'mode=subscription',
+                                            '-d', f'customer={customer_id}',
+                                            '-d', f'line_items[0][price]={price_id}',
+                                            '-d', 'line_items[0][quantity]=1',
+                                            '-d', 'subscription_data[trial_period_days]=14',
+                                            '-d', 'success_url=https://aleen.dp.claudy.host/subscription/success?session_id={CHECKOUT_SESSION_ID}',
+                                            '-d', 'cancel_url=https://aleen.dp.claudy.host/subscription/cancel',
+                                            '-d', f'metadata[user_id]={user_id}'
+                                        ], capture_output=True, text=True)
+                                        
+                                        print(f"🔧 Checkout API response: {checkout_result.stdout}")
+                                        print(f"🔧 Checkout API stderr: {checkout_result.stderr}")
+                                        print(f"🔧 Return code: {checkout_result.returncode}")
+                                        
+                                        if checkout_result.returncode == 0 and checkout_result.stdout:
+                                            try:
+                                                checkout_data = json.loads(checkout_result.stdout)
+                                                print(f"🔧 Parsed checkout data: {checkout_data}")
+                                                
+                                                if 'url' in checkout_data:
+                                                    checkout_url = checkout_data['url']
+                                                elif 'error' in checkout_data:
+                                                    print(f"❌ Stripe error: {checkout_data['error']}")
+                                                    checkout_url = None
+                                                else:
+                                                    print(f"❌ Unexpected response format: {checkout_data}")
+                                                    checkout_url = None
+                                            except json.JSONDecodeError as e:
+                                                print(f"❌ JSON decode error: {e}")
+                                                print(f"❌ Raw response: {checkout_result.stdout}")
+                                                checkout_url = None
+                                        else:
+                                            print(f"❌ API call failed")
+                                            checkout_url = None
+                                        
+                                        if checkout_url:
+                                            # SALVAR NO BANCO ANTES DE ENVIAR WHATSAPP
+                                            try:
+                                                print(f"💾 Salvando checkout session no banco...")
+                                                checkout_session_id = checkout_data['id']
+                                                
+                                                # APENAS salvar checkout session por enquanto
+                                                # Subscription será criada pelo webhook após pagamento
+                                                checkout_insert = supabase.table('checkout_sessions').insert({
+                                                    'user_id': user_id,
+                                                    'stripe_checkout_session_id': checkout_session_id,
+                                                    'checkout_url': checkout_url,
+                                                    'status': 'pending',
+                                                    'expires_at': None,  # TODO: pegar do Stripe se necessário
+                                                    'created_at': 'now()'
+                                                }).execute()
+                                                
+                                                print(f"✅ Checkout session salvo no banco: {checkout_session_id}")
+                                                print(f"⏳ Subscription será criada após pagamento via webhook")
+                                                
+                                            except Exception as db_error:
+                                                print(f"❌ Erro ao salvar checkout no banco: {db_error}")
+                                                # Continuar mesmo com erro no banco
+                                            
+                                            message_text = f"""🎉 *Parabéns por completar seu onboarding!*
+
+Para começar a usar a Aleen IA com *14 dias grátis*, finalize sua assinatura:
+
+🔗 *Link de pagamento:*
+{checkout_url}
+
+✅ *Benefícios inclusos:*
+- 14 dias de trial gratuito
+- Planos de nutrição personalizados
+- Treinos específicos para seu objetivo
+- Suporte 24/7 da Aleen
+
+*Após inserir os dados do cartão, você terá 14 dias para testar tudo gratuitamente!*"""
+                                            
+                                            print(f"✅ Checkout criado: {checkout_url}")
+                                            
+                                            return WhatsAppMessageResponse(
+                                                response=message_text,
+                                                agent_used="subscription_checkout",
+                                                conversation_context="onboarding_complete_checkout",
+                                                whatsapp_sent=True,
+                                                messages_sent=1
+                                            )
+                                        else:
+                                            print(f"❌ Erro ao criar checkout: {checkout_result.stderr}")
+                                    except Exception as e:
+                                        print(f"❌ Erro ao criar checkout: {e}")
+                                
+                                # Fallback caso algo dê errado
+                                return WhatsAppMessageResponse(
+                                    response="🎉 Parabéns! Seu onboarding foi concluído!\n\n💳 Entre em contato conosco para ativar sua assinatura e começar seus 14 dias grátis!",
+                                    agent_used="subscription_checkout",
+                                    conversation_context="onboarding_complete_fallback",
+                                    whatsapp_sent=False,
+                                    messages_sent=1
+                                )
+                            else:
+                                print(f"⚠️ Onboarding não foi completado, mas usuário não tem assinatura")
+                        
+                        # Se chegou aqui, usuário precisa completar onboarding primeiro
+                        return WhatsAppMessageResponse(
+                            response=f"🚫 **Para usar a Aleen IA, você precisa completar seu onboarding primeiro.**\n\n🔗 **Complete aqui:** https://aleen.dp.claudy.host/onboarding/{user_id}\n\n� Após completar, você terá 14 dias grátis para testar!",
+                            agent_used="onboarding_required", 
+                            conversation_context="incomplete_onboarding",
+                            whatsapp_sent=False,
+                            messages_sent=1
+                        )
+                else:
+                    print(f"❌ Usuário não encontrado no banco para telefone: {request.phone_number}")
+                    
+            except Exception as e:
+                print(f"❌ Erro verificando assinatura: {e}")
+                # Continua normalmente em caso de erro na verificação
+        
+        # Determina agente inicial baseado no contexto do usuário
         initial_agent = determine_initial_agent(
             message=request.message,
             user_history=user_memory,
