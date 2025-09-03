@@ -4677,7 +4677,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                         
                         # Verificar se onboarding foi completado
                         user_data = supabase.table('users')\
-                            .select('email, name, onboarding')\
+                            .select('email, name, onboarding, stripe_customer_id')\
                             .eq('id', user_id)\
                             .single()\
                             .execute()
