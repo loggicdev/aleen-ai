@@ -4688,7 +4688,51 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                             onboarding_complete = user_data.data.get('onboarding', False)
                             
                             if onboarding_complete:
-                                print(f"🎉 Onboarding completo! Criando checkout para iniciar assinatura...")
+                                print(f"🎉 Onboarding completo! Verificando checkout existente...")
+                                
+                                # VERIFICAR SE JÁ EXISTE CHECKOUT PENDENTE
+                                try:
+                                    existing_checkout = supabase.table('checkout_sessions')\
+                                        .select('checkout_url, stripe_checkout_session_id, status')\
+                                        .eq('user_id', user_id)\
+                                        .eq('status', 'pending')\
+                                        .order('created_at', desc=True)\
+                                        .limit(1)\
+                                        .execute()
+                                    
+                                    if existing_checkout.data and len(existing_checkout.data) > 0:
+                                        existing_url = existing_checkout.data[0]['checkout_url']
+                                        session_id = existing_checkout.data[0]['stripe_checkout_session_id']
+                                        
+                                        print(f"♻️ Checkout pendente encontrado: {session_id}")
+                                        
+                                        message_text = f"""🔄 *Você já tem um checkout pendente!*
+
+Complete sua assinatura para começar os *14 dias grátis*:
+
+🔗 *Link de pagamento:*
+{existing_url}
+
+✅ *Benefícios inclusos:*
+- 14 dias de trial gratuito
+- Planos de nutrição personalizados
+- Treinos específicos para seu objetivo
+- Suporte 24/7 da Aleen
+
+*Após inserir os dados do cartão, você terá 14 dias para testar tudo gratuitamente!*"""
+                                        
+                                        return WhatsAppMessageResponse(
+                                            response=message_text,
+                                            agent_used="subscription_checkout_existing",
+                                            conversation_context="checkout_pending_resend",
+                                            whatsapp_sent=True,
+                                            messages_sent=1
+                                        )
+                                        
+                                except Exception as e:
+                                    print(f"⚠️ Erro ao verificar checkout existente: {e}")
+                                
+                                print(f"🆕 Criando novo checkout...")
                                 
                                 # Buscar customer_id do usuário (já deve existir!)
                                 customer_id = user_data.data.get('stripe_customer_id')
@@ -4766,6 +4810,41 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
                                             checkout_url = None
                                         
                                         if checkout_url:
+                                            # SALVAR NO BANCO ANTES DE ENVIAR WHATSAPP
+                                            try:
+                                                print(f"💾 Salvando checkout session no banco...")
+                                                checkout_session_id = checkout_data['id']
+                                                
+                                                # Criar registro de subscription pendente
+                                                subscription_insert = supabase.table('subscriptions').insert({
+                                                    'user_id': user_id,
+                                                    'product_id': None,  # Será preenchido pelo webhook
+                                                    'price_id': None,    # Será preenchido pelo webhook
+                                                    'stripe_subscription_id': None,  # Será preenchido pelo webhook
+                                                    'status': 'checkout_pending',
+                                                    'trial_start': None,
+                                                    'trial_end': None,
+                                                    'current_period_start': None,
+                                                    'current_period_end': None,
+                                                    'cancel_at_period_end': False,
+                                                    'created_at': 'now()',
+                                                    'updated_at': 'now()'
+                                                }).execute()
+                                                
+                                                # Salvar checkout session para referência
+                                                checkout_insert = supabase.table('checkout_sessions').insert({
+                                                    'user_id': user_id,
+                                                    'stripe_checkout_session_id': checkout_session_id,
+                                                    'checkout_url': checkout_url,
+                                                    'status': 'pending',
+                                                    'created_at': 'now()'
+                                                }).execute()
+                                                
+                                                print(f"✅ Checkout session salvo no banco: {checkout_session_id}")
+                                                
+                                            except Exception as db_error:
+                                                print(f"❌ Erro ao salvar no banco: {db_error}")
+                                                # Continuar mesmo com erro no banco
                                             
                                             message_text = f"""🎉 *Parabéns por completar seu onboarding!*
 
@@ -4783,12 +4862,13 @@ Para começar a usar a Aleen IA com *14 dias grátis*, finalize sua assinatura:
 *Após inserir os dados do cartão, você terá 14 dias para testar tudo gratuitamente!*"""
                                             
                                             print(f"✅ Checkout criado: {checkout_url}")
+                                            print(f"💬 Enviando link de checkout para o usuário...")
                                             
                                             return WhatsAppMessageResponse(
                                                 response=message_text,
                                                 agent_used="subscription_checkout",
                                                 conversation_context="onboarding_complete_checkout",
-                                                whatsapp_sent=False,
+                                                whatsapp_sent=True,
                                                 messages_sent=1
                                             )
                                         else:
