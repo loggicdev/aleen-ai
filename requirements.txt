@@ -7,4 +7,5 @@ python-dotenv
 redis
 supabase
 requests
+httpx
 eval_type_backport

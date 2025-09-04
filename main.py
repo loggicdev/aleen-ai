@@ -4,6 +4,7 @@ import time
 import sys
 import json
 import requests
+import httpx
 import secrets
 import string
 import traceback
@@ -4603,6 +4604,55 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
         if not agents_cache:
             raise HTTPException(status_code=503, detail="Agentes não carregados")
         
+        # ====== DETECTAR COMANDOS DE OPT-OUT/OPT-IN ======
+        message_lower = request.message.lower().strip()
+        opt_out_keywords = ['parar', 'stop', 'cancelar', 'sair', 'remover', 'descadastrar']
+        opt_in_keywords = ['voltar', 'retornar', 'ativar', 'receber']
+        
+        if any(keyword in message_lower for keyword in opt_out_keywords):
+            try:
+                # Processar opt-out
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "http://localhost:9000/api/followup/opt-out",
+                        json={"phone": request.phone_number, "action": "opt_out"},
+                        timeout=10
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        opt_out_message = result.get('message', 'Você foi removido(a) dos lembretes automáticos.')
+                        print(f"✅ User opted out: {request.phone_number}")
+                        
+                        return WhatsAppMessageResponse(
+                            response=opt_out_message + "\n\nSe mudar de ideia, envie 'VOLTAR' para receber novamente.",
+                            status="success",
+                            whatsapp_sent=True
+                        )
+            except Exception as e:
+                print(f"❌ Error processing opt-out: {e}")
+                
+        elif any(keyword in message_lower for keyword in opt_in_keywords):
+            try:
+                # Processar opt-in
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        "http://localhost:9000/api/followup/opt-out",
+                        json={"phone": request.phone_number, "action": "opt_in"},
+                        timeout=10
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        opt_in_message = result.get('message', 'Você voltou a receber lembretes automáticos.')
+                        print(f"✅ User opted in: {request.phone_number}")
+                        
+                        return WhatsAppMessageResponse(
+                            response=opt_in_message + "\n\nVou continuar te acompanhando na sua jornada de saúde! 😊",
+                            status="success",
+                            whatsapp_sent=True
+                        )
+            except Exception as e:
+                print(f"❌ Error processing opt-in: {e}")
+        
         # Recupera memória do usuário baseada no número de telefone
         user_memory = get_user_memory(request.phone_number)
         
@@ -5663,6 +5713,122 @@ async def stripe_webhook(request: Request):
 if subscription_system and subscription_system.is_available():
     subscription_system.setup_routes(app)
     print("💳 Subscription routes registered")
+
+# ====== FOLLOWUP SYSTEM ENDPOINTS ======
+@app.post("/api/followup/opt-out")
+async def handle_followup_opt_out(request: Request):
+    """
+    Handle opt-out requests from WhatsApp messages
+    Called when user responds with 'PARAR', 'STOP', etc.
+    """
+    try:
+        body = await request.json()
+        phone = body.get("phone")
+        action = body.get("action", "opt_out")  # 'opt_out' or 'opt_in'
+        
+        if not phone:
+            raise HTTPException(status_code=400, detail="Phone number required")
+        
+        # Call Supabase Edge Function
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
+        
+        edge_function_url = f"{supabase_url}/functions/v1/followup-preferences"
+        
+        payload = {
+            "phone": phone,
+            "action": action
+        }
+        
+        response = requests.post(
+            edge_function_url,
+            headers={
+                "Authorization": f"Bearer {supabase_anon_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Followup preference updated for {phone}: {action}")
+            return result
+        else:
+            error_text = response.text()
+            print(f"❌ Error updating followup preference: {error_text}")
+            raise HTTPException(status_code=response.status_code, detail=error_text)
+            
+    except Exception as e:
+        print(f"❌ Error in followup opt-out: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cron/send-followups")
+async def trigger_weekly_followups(request: Request):
+    """
+    Endpoint para triggerar followups manualmente ou via cron externo
+    Também pode ser chamado pela própria Edge Function se necessário
+    """
+    try:
+        # Verificar auth
+        auth_header = request.headers.get('Authorization')
+        cron_secret = os.getenv('CRON_SECRET', 'aleen-cron-secret-2025')
+        
+        if not auth_header or cron_secret not in auth_header:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Call Supabase Edge Function
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        edge_function_url = f"{supabase_url}/functions/v1/weekly-followup-cron"
+        
+        response = requests.post(
+            edge_function_url,
+            headers={
+                "Authorization": f"Bearer {supabase_service_key}",
+                "Content-Type": "application/json"
+            },
+            json={},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Weekly followup cron executed: {result}")
+            return result
+        else:
+            error_text = response.text()
+            print(f"❌ Error executing followup cron: {error_text}")
+            raise HTTPException(status_code=response.status_code, detail=error_text)
+            
+    except Exception as e:
+        print(f"❌ Error in followup cron trigger: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/followup/status")
+async def get_followup_status():
+    """Get system status and recent followup activity"""
+    try:
+        # Check recent followup executions
+        recent_executions = supabase.table("followup_executions").select("*").order("executed_at.desc").limit(10).execute()
+        
+        # Check active subscribers count
+        active_subs = supabase.table("subscriptions").select("id").eq("status", "active").execute()
+        
+        # Check opt-out preferences
+        opt_outs = supabase.table("followup_preferences").select("user_id").eq("enabled", False).execute()
+        
+        return {
+            "status": "healthy",
+            "active_subscribers": len(active_subs.data),
+            "opted_out_users": len(opt_outs.data),
+            "recent_executions": recent_executions.data,
+            "last_execution": recent_executions.data[0] if recent_executions.data else None
+        }
+    except Exception as e:
+        print(f"Status check error: {e}")
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
