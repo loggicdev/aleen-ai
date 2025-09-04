@@ -5858,8 +5858,8 @@ async def get_followup_status():
         # Check recent followup executions
         recent_executions = supabase.table("followup_executions").select("*").order("executed_at", desc=True).limit(10).execute()
         
-        # Check active subscribers count
-        active_subs = supabase.table("subscriptions").select("id").eq("status", "active").execute()
+        # Check active subscribers count (incluindo trialing)
+        active_subs = supabase.table("subscriptions").select("id").in_("status", ["active", "trialing"]).execute()
         
         # Check opt-out preferences
         opt_outs = supabase.table("followup_preferences").select("user_id").eq("enabled", False).execute()
