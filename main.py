@@ -5806,12 +5806,57 @@ async def trigger_weekly_followups(request: Request):
         print(f"❌ Error in followup cron trigger: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/followup/trigger")
+async def trigger_weekly_followup_manual(request: Request):
+    """
+    Endpoint para executar o cron de followup manualmente (com secret no body)
+    """
+    try:
+        # Get body data
+        body = await request.json()
+        provided_secret = body.get('secret', '')
+        
+        # Verificar secret
+        cron_secret = os.getenv('CRON_SECRET', 'aleen-cron-secret-2025')
+        
+        if provided_secret != cron_secret:
+            raise HTTPException(status_code=401, detail="Invalid secret")
+        
+        # Call Supabase Edge Function
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        
+        edge_function_url = f"{supabase_url}/functions/v1/weekly-followup-cron"
+        
+        response = requests.post(
+            edge_function_url,
+            headers={
+                "Authorization": f"Bearer {supabase_service_key}",
+                "Content-Type": "application/json"
+            },
+            json={},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Weekly followup cron executed: {result}")
+            return result
+        else:
+            error_text = response.text()
+            print(f"❌ Error executing followup cron: {error_text}")
+            raise HTTPException(status_code=response.status_code, detail=error_text)
+            
+    except Exception as e:
+        print(f"❌ Error in followup cron trigger: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/followup/status")
 async def get_followup_status():
     """Get system status and recent followup activity"""
     try:
         # Check recent followup executions
-        recent_executions = supabase.table("followup_executions").select("*").order("executed_at.desc").limit(10).execute()
+        recent_executions = supabase.table("followup_executions").select("*").order("executed_at", desc=True).limit(10).execute()
         
         # Check active subscribers count
         active_subs = supabase.table("subscriptions").select("id").eq("status", "active").execute()
