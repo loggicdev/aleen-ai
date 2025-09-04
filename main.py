@@ -5843,7 +5843,7 @@ async def trigger_weekly_followup_manual(request: Request):
             print(f"✅ Weekly followup cron executed: {result}")
             return result
         else:
-            error_text = response.text()
+            error_text = response.text
             print(f"❌ Error executing followup cron: {error_text}")
             raise HTTPException(status_code=response.status_code, detail=error_text)
             
