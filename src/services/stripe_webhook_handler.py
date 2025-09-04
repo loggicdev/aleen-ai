@@ -40,7 +40,7 @@ class StripeWebhookHandler:
             
             # Por enquanto, criar com dados básicos
             # Buscar product_id e price_id do banco baseado no plano ativo
-            plan_data = self.supabase.client.table('prices')\
+            plan_data = self.supabase.table('prices')\
                 .select('id, product_id, stripe_price_id, trial_period_days')\
                 .eq('is_active', True)\
                 .limit(1)\
@@ -74,7 +74,7 @@ class StripeWebhookHandler:
             }
             
             # Inserir subscription
-            subscription_result = self.supabase.client.table('subscriptions')\
+            subscription_result = self.supabase.table('subscriptions')\
                 .insert(subscription_data)\
                 .execute()
             
@@ -82,7 +82,7 @@ class StripeWebhookHandler:
                 logger.info(f"✅ Subscription criada: {subscription_id}")
                 
                 # Atualizar checkout session para completed
-                checkout_update = self.supabase.client.table('checkout_sessions')\
+                checkout_update = self.supabase.table('checkout_sessions')\
                     .update({
                         'status': 'completed',
                         'completed_at': datetime.utcnow().isoformat()
@@ -120,7 +120,7 @@ class StripeWebhookHandler:
             logger.info(f"📨 Subscription criada: {subscription_id}, customer: {customer_id}, status: {status}")
             
             # Buscar user_id pelo customer_id
-            user_result = self.supabase.client.table('users')\
+            user_result = self.supabase.table('users')\
                 .select('id')\
                 .eq('stripe_customer_id', customer_id)\
                 .single()\
@@ -134,7 +134,7 @@ class StripeWebhookHandler:
             logger.info(f"✅ Usuário encontrado: {user_id}")
             
             # Buscar plano ativo para obter product_id e price_id
-            plan_data = self.supabase.client.table('prices')\
+            plan_data = self.supabase.table('prices')\
                 .select('id, product_id, stripe_price_id, trial_period_days')\
                 .eq('is_active', True)\
                 .limit(1)\
@@ -175,7 +175,7 @@ class StripeWebhookHandler:
             }
             
             # Inserir subscription
-            subscription_result = self.supabase.client.table('subscriptions')\
+            subscription_result = self.supabase.table('subscriptions')\
                 .insert(subscription_data)\
                 .execute()
             
@@ -208,7 +208,7 @@ class StripeWebhookHandler:
             logger.info(f"📨 Atualizando subscription: {subscription_id} -> {status}")
             
             # Atualizar no banco
-            update_result = self.supabase.client.table('subscriptions')\
+            update_result = self.supabase.table('subscriptions')\
                 .update({
                     'status': status,
                     'updated_at': datetime.utcnow().isoformat()
