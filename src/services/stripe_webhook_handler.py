@@ -106,6 +106,95 @@ class StripeWebhookHandler:
             logger.error(f"❌ Erro processando webhook: {e}")
             return {"error": str(e)}
     
+    async def handle_subscription_created(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Processa evento customer.subscription.created
+        Cria o registro de subscription no banco
+        """
+        try:
+            subscription = event_data.get('data', {}).get('object', {})
+            subscription_id = subscription.get('id')
+            customer_id = subscription.get('customer')
+            status = subscription.get('status')
+            
+            logger.info(f"📨 Subscription criada: {subscription_id}, customer: {customer_id}, status: {status}")
+            
+            # Buscar user_id pelo customer_id
+            user_result = self.supabase.client.table('users')\
+                .select('id')\
+                .eq('stripe_customer_id', customer_id)\
+                .single()\
+                .execute()
+            
+            if not user_result.data:
+                logger.error(f"❌ Usuário não encontrado para customer {customer_id}")
+                return {"error": "User not found for customer"}
+            
+            user_id = user_result.data['id']
+            logger.info(f"✅ Usuário encontrado: {user_id}")
+            
+            # Buscar plano ativo para obter product_id e price_id
+            plan_data = self.supabase.client.table('prices')\
+                .select('id, product_id, stripe_price_id, trial_period_days')\
+                .eq('is_active', True)\
+                .limit(1)\
+                .execute()
+            
+            if not plan_data.data:
+                logger.error("❌ Nenhum plano ativo encontrado")
+                return {"error": "No active plan found"}
+            
+            plan = plan_data.data[0]
+            
+            # Extrair datas da subscription
+            trial_start = subscription.get('trial_start')
+            trial_end = subscription.get('trial_end')
+            current_period_start = subscription.get('current_period_start')
+            current_period_end = subscription.get('current_period_end')
+            
+            # Converter timestamps para ISO format
+            def timestamp_to_iso(timestamp):
+                if timestamp:
+                    return datetime.fromtimestamp(timestamp).isoformat()
+                return None
+            
+            # Criar registro de subscription
+            subscription_data = {
+                'user_id': user_id,
+                'product_id': plan['product_id'],
+                'price_id': plan['id'],
+                'stripe_subscription_id': subscription_id,
+                'status': status,
+                'trial_start': timestamp_to_iso(trial_start),
+                'trial_end': timestamp_to_iso(trial_end),
+                'current_period_start': timestamp_to_iso(current_period_start),
+                'current_period_end': timestamp_to_iso(current_period_end),
+                'cancel_at_period_end': subscription.get('cancel_at_period_end', False),
+                'created_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.utcnow().isoformat()
+            }
+            
+            # Inserir subscription
+            subscription_result = self.supabase.client.table('subscriptions')\
+                .insert(subscription_data)\
+                .execute()
+            
+            if subscription_result.data:
+                logger.info(f"✅ Subscription criada no banco: {subscription_id}")
+                return {
+                    "success": True,
+                    "subscription_id": subscription_id,
+                    "user_id": user_id,
+                    "status": status
+                }
+            else:
+                logger.error(f"❌ Falha ao criar subscription no banco")
+                return {"error": "Failed to create subscription in database"}
+                
+        except Exception as e:
+            logger.error(f"❌ Erro processando subscription created: {e}")
+            return {"error": str(e)}
+    
     async def handle_subscription_updated(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processa evento customer.subscription.updated
@@ -148,10 +237,15 @@ class StripeWebhookHandler:
             
             if event_type == 'checkout.session.completed':
                 return await self.handle_checkout_session_completed(event)
+            elif event_type == 'customer.subscription.created':
+                return await self.handle_subscription_created(event)
             elif event_type == 'customer.subscription.updated':
                 return await self.handle_subscription_updated(event)
             elif event_type == 'customer.subscription.deleted':
                 return await self.handle_subscription_updated(event)  # Mesmo handler
+            elif event_type == 'invoice.payment_succeeded':
+                logger.info(f"✅ Pagamento bem-sucedido - subscription já deve estar ativa")
+                return {"success": True, "message": "Payment succeeded"}
             else:
                 logger.info(f"⚠️ Evento não tratado: {event_type}")
                 return {"success": True, "message": f"Event {event_type} ignored"}
