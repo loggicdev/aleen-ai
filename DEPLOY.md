@@ -43,10 +43,10 @@ NODE_ENV=production
 PORT=3000
 
 # Redis (usar serviço Redis do Dokploy)
-REDIS_URL=redis://redis:6380
+REDIS_URL=redis://redis:6379
 
 # Python AI Service
-PYTHON_AI_BASE_URL=http://python-ai:9000
+PYTHON_AI_BASE_URL=http://python-ai:8000
 
 # Evolution API
 EVOLUTION_API_BASE_URL=https://evo-iafit.live.claudy.host
@@ -71,7 +71,7 @@ LOG_FORMAT=json
 1. No Dokploy, adicione um serviço Redis:
    - Type: `Redis`
    - Name: `redis`
-   - Port: `6380`
+   - Port: `6379`
    - Network: Mesma rede da aplicação
 
 #### Python AI (Opcional)

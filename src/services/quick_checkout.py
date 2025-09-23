@@ -19,7 +19,7 @@ async def create_quick_checkout_for_user(user_id: str, user_email: str) -> str:
         # TODO: Implementar com MCP Stripe real quando disponível
         
         # Simulação de checkout URL
-        base_url = os.getenv('BASE_URL', 'https://aleen.dp.claudy.host')
+        base_url = os.getenv('BASE_URL', 'https://aleen.fit')
         test_checkout_url = f"https://buy.stripe.com/test_14k9Dh8gY9ux4gg7ss?prefilled_email={user_email}"
         
         logger.info(f"✅ Quick checkout generated: {test_checkout_url}")

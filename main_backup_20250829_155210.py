@@ -435,11 +435,11 @@ def create_user_and_save_onboarding(name: str, age: str, email: str, phone: str)
         
         return {
             "success": True,
-            "message": f"🎉 Conta criada com sucesso!\n\n📧 Email: {email}\n🔑 Senha temporária: {temp_password}\n\nVocê já pode fazer login no app da Aleen usando essas credenciais. Recomendamos alterar sua senha após o primeiro login.\n\n🔗 Continue seu onboarding aqui: https://aleen.dp.claudy.host/onboarding/{user_id}",
+            "message": f"🎉 Conta criada com sucesso!\n\n📧 Email: {email}\n🔑 Senha temporária: {temp_password}\n\nVocê já pode fazer login no app da Aleen usando essas credenciais. Recomendamos alterar sua senha após o primeiro login.\n\n🔗 Continue seu onboarding aqui: https://aleen.fit/onboarding/{user_id}",
             "user_id": user_id,
             "temp_password": temp_password,
             "email": email,
-            "onboarding_url": f"https://aleen.dp.claudy.host/onboarding/{user_id}",
+            "onboarding_url": f"https://aleen.fit/onboarding/{user_id}",
             "login_instructions": "Use o email e senha temporária para fazer login no app da Aleen, depois complete seu onboarding no link acima."
         }
         
@@ -4231,7 +4231,7 @@ def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
             print(f"🔍 DEBUG - Onboarding incompleto, retornando incomplete_onboarding")
             # Tem registro mas onboarding incompleto
             # Busca URL de onboarding se existir
-            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_id}"
+            onboarding_url = f"https://aleen.fit/onboarding/{user_id}"
             
             return UserContext(
                 user_type="incomplete_onboarding",
@@ -4244,7 +4244,7 @@ def get_user_context_by_phone(phone_number: str) -> Optional[UserContext]:
         else:
             print(f"🔍 DEBUG - Usuário completo, retornando complete_user")
             # Usuário completo
-            onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_id}"
+            onboarding_url = f"https://aleen.fit/onboarding/{user_id}"
             
             return UserContext(
                 user_type="complete_user",
@@ -4650,7 +4650,7 @@ async def whatsapp_chat(request: WhatsAppMessageRequest):
             if not user_context.onboarding_url and user_context:
                 # Usa user_id se disponível, senão usa phone_number
                 user_identifier = getattr(user_context, 'user_id', None) or request.phone_number.replace('+', '')
-                onboarding_url = f"https://aleen.dp.claudy.host/onboarding/{user_identifier}"
+                onboarding_url = f"https://aleen.fit/onboarding/{user_identifier}"
                 print(f"🔗 URL de onboarding gerada automaticamente: {onboarding_url}")
             else:
                 onboarding_url = user_context.onboarding_url

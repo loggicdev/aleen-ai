@@ -1,182 +1,96 @@
-# Aleen AI - Sistema de Agentes Inteligentes
+# Aleen IA - Python AI Service
 
-Sistema de agentes de IA para automação de atendimento via WhatsApp com foco em fitness e nutrição.
+## 🤖 **Serviço de IA em Python**
 
-## 🚀 Funcionalidades
+Serviço independente responsável pelo processamento de mensagens com OpenAI GPT-4, gerenciamento de agentes inteligentes e integração com Supabase.
 
-### ✅ Implementadas
-- **Sistema Multi-Agentes**: Onboarding, Sales, Support e Out-of-Context
-- **Integração WhatsApp**: Via Evolution API com quebra automática de mensagens
-- **Memória de Conversas**: Armazenamento Redis com TTL de 7 dias
-- **Onboarding Inteligente**: Perguntas dinâmicas do banco de dados
-- **Criação de Usuários**: Registro automático com autenticação Supabase
-- **Tools Integradas**: Busca de perguntas e criação de usuários
-- **Gerenciamento de Leads**: Vinculação automática de leads a usuários
+### � **Funcionalidades**
 
-### 🎯 Agentes Especializados
-1. **Onboarding Agent**: Boas-vindas e apresentação do app
-2. **Sales Agent**: Conversão e vendas consultivas
-3. **Support Agent**: Suporte técnico e dúvidas sobre o app
-4. **Out-of-Context Agent**: Redirecionamento para tópicos relevantes
+- **OpenAI GPT-4**: Processamento avançado de mensagens
+- **Sistema de Agentes**: onboarding, sales, support, out_context
+- **Supabase Integration**: Carregamento dinâmico de prompts
+- **Redis Caching**: Cache de contexto de usuários
+- **Evolution API**: Envio direto de mensagens WhatsApp
+- **Health Checks**: Monitoramento completo
 
-## 📋 Pré-requisitos
+### 📡 API Endpoints
 
-- Python 3.9+
-- Redis Server
-- Conta Supabase
-- Evolution API configurada
-- OpenAI API Key
+#### Core Endpoints
+- `POST /chat` - Processa mensagem com IA
+- `POST /whatsapp-chat` - Processa + envia WhatsApp
+- `POST /send-whatsapp` - Envio direto WhatsApp
+- `GET /health` - Health check completo
 
-## 🔧 Instalação
+#### Management Endpoints
+- `GET /agents` - Lista agentes disponíveis
+- `POST /reload-agents` - Recarrega agentes do Supabase
+- `GET /agents/config` - Configuração dos agentes
 
-1. **Clone o repositório**:
+### 🔧 Configuração
+
+#### Variáveis de Ambiente
 ```bash
-git clone https://github.com/loggicdev/aleen-ai.git
-cd aleen-ai
-```
-
-2. **Instale as dependências**:
-```bash
-pip install -r requirements.txt
-```
-
-3. **Configure as variáveis de ambiente**:
-```bash
-cp .env.example .env
-# Edite o arquivo .env com suas configurações
-```
-
-4. **Execute o servidor**:
-```bash
-python3 main.py
-```
-
-## ⚙️ Configuração
-
-### Variáveis de Ambiente Obrigatórias
-
-```env
 # OpenAI
-OPENAI_API_KEY=sk-your-openai-key
-
-# Supabase
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+OPENAI_API_KEY=sk-proj-...
 
 # Redis
-REDIS_URL=redis://localhost:6380
+REDIS_URL=redis://redis:6379
+
+# Supabase
+SUPABASE_URL=https://...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_ANON_KEY=eyJ...
 
 # Evolution API
-EVOLUTION_API_BASE_URL=https://your-evolution-api.com
-EVOLUTION_API_KEY=your-api-key
-EVOLUTION_INSTANCE=your-instance-name
+EVOLUTION_API_BASE_URL=https://...
+EVOLUTION_API_KEY=...
+EVOLUTION_INSTANCE=...
 ```
 
-### Estrutura do Banco de Dados
+### 🐳 Docker
 
-O sistema requer as seguintes tabelas no Supabase:
-- `agents` - Configuração dos agentes
-- `onboarding_questions` - Perguntas do onboarding
-- `onboarding_responses` - Respostas dos usuários
-- `users` - Dados dos usuários
-- `leads` - Gerenciamento de leads
+```dockerfile
+FROM python:3.9-slim
 
-## 🌐 Endpoints da API
+WORKDIR /app
 
-### POST `/whatsapp-chat`
-Processa mensagens do WhatsApp com contexto completo
-```json
-{
-  "user_id": "temp-id",
-  "user_name": "João Silva", 
-  "phone_number": "5511999888777",
-  "message": "Olá, quero conhecer o app",
-  "send_to_whatsapp": true
-}
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["python", "main.py"]
 ```
 
-### POST `/chat`
-Endpoint básico para teste sem WhatsApp
-```json
-{
-  "user_id": "test-user",
-  "user_name": "Test User",
-  "message": "Hello",
-  "recommended_agent": "onboarding"
-}
-```
+### 🚀 Deploy
 
-### GET `/health`
-Health check completo do sistema
+1. **Local**: `python main.py`
+2. **Docker**: `docker build -t aleen-ai-python . && docker run -p 8000:8000 aleen-ai-python`
+3. **Dokploy**: Configure como serviço independente
 
-### GET `/agents`
-Lista todos os agentes carregados
+### 📊 Monitoramento
 
-## 🔄 Fluxo de Onboarding
+- Health check: `GET /health`
+- Logs estruturados com emojis
+- Métricas de performance nos endpoints
 
-1. **Usuário inicia conversa** → Agente Onboarding
-2. **Interesse demonstrado** → Tool `get_onboarding_questions`
-3. **Perguntas apresentadas** → Usuário responde (nome, idade, email)
-4. **Dados coletados** → Tool `create_user_and_save_onboarding`
-5. **Conta criada** → Credenciais enviadas via WhatsApp
-6. **Lead atualizado** → Usuário vinculado e marcado como convertido
+### 🔄 **Integração com Node.js**
 
-## 🛠️ Tools Disponíveis
+O serviço Node.js se comunica via HTTP:
 
-### `get_onboarding_questions`
-Busca perguntas configuradas no banco para WhatsApp
-- Filtra por `send_in = 'whatsapp'` e `is_active = true`
-- Ordena por `step_number`
+**Produção**: `https://ai-aleen.live.claudy.host`  
+**Local**: `http://localhost:8000`
 
-### `create_user_and_save_onboarding`
-Cria usuário completo com autenticação
-- Gera senha temporária segura
-- Cria registro em `auth.users` via REST API
-- Trigger automático cria registro em `public.users`
-- Salva respostas de onboarding
-- Vincula e atualiza leads existentes
-
-## 🧠 Sistema de Memória
-
-- **Armazenamento**: Redis com chave `user_memory:{phone}`
-- **TTL**: 7 dias (604800 segundos)
-- **Capacidade**: Últimas 20 mensagens por usuário
-- **Contexto**: 2000 caracteres máximo por requisição
-
-## 🚀 Deploy
-
-### Docker
 ```bash
-docker build -t aleen-ai .
-docker run -p 9000:9000 --env-file .env aleen-ai
+# Exemplo de requisição
+curl -X POST https://ai-aleen.live.claudy.host/chat 
+  -H "Content-Type: application/json" 
+  -d '{
+    "user_id": "user_123",
+    "user_name": "João", 
+    "message": "Olá!",
+    "conversation_history": []
+  }'
 ```
-
-### Scripts Disponíveis
-- `restart-python-ai.sh` - Reinicia o serviço
-- `diagnose-python-ai.sh` - Diagnóstico do sistema
-- `fix-python-ai.sh` - Correções automáticas
-
-## 📊 Monitoramento
-
-### Health Check
-- **URL**: `GET /health`
-- **Verifica**: Redis, OpenAI, Supabase, Agentes carregados
-- **Status**: 200 (healthy) ou 503 (unhealthy)
-
-### Logs
-- Formato estruturado com emojis para facilitar debugging
-- Log de execução de tools com argumentos
-- Rastreamento de fluxo de agentes
-- Métricas de memória e contexto
-
-## 🔧 Troubleshooting
-
-Consulte `TROUBLESHOOTING-PYTHON-AI.md` para problemas comuns e soluções.
-
-## 📝 Licença
-
-Este projeto está sob licença proprietária da Loggic Dev.
-
-## 🤝 Contribuição
-
-Para contribuir com o projeto, entre em contato com a equipe de desenvolvimento.

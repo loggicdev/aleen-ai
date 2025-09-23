@@ -1,8 +1,3 @@
-# Environment variables
-.env
-.env.local
-.env.production
-
 # Python
 __pycache__/
 *.py[cod]
@@ -26,48 +21,36 @@ wheels/
 *.egg
 
 # Virtual environments
-venv/
+.env
+.venv
 env/
+venv/
 ENV/
-.venv/
+env.bak/
+venv.bak/
 
-# IDE
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# Logs
-*.log
-logs/
-
-# Redis
-dump.rdb
-*.rdb
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
-temp/
+# Logs
+*.log
+logs/
 
-# Test coverage
-.coverage
-htmlcov/
+# Redis dump
+dump.rdb
+
+# Test files (keep local test files private)
+test_*.py
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# FastAPI
 .pytest_cache/
-
-# Docker
-.dockerignore
-
-# Local development
-local/
-local_*
-debug_*
-
-# BMad and Cursor
-.bmad-core/
-.cursor/
